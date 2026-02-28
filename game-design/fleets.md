@@ -18,7 +18,7 @@ Fleets are the primary way players project power and move resources across space
 ### Colony Ship
 - Purpose: **Colonize** an uncolonized planet.
 - **Consumed on use** — the ship lands and becomes the colony.
-- Built at a Shipyard from Ingots.
+- Built at a Shipyard from Iron Ingots.
 - Has a travel speed.
 
 ### Cargo Vessel
@@ -26,10 +26,16 @@ Fleets are the primary way players project power and move resources across space
 - Each Cargo Vessel has a **fixed cargo capacity**.
 - A fleet's total cargo capacity is the **sum of its individual Cargo Vessels**.
 - Resources are **bound to individual ships** — if a ship is destroyed, the resources it carries are lost (or left as wreckage).
-- Built at a Shipyard from Ingots.
+- Built at a Shipyard from Iron Ingots.
 - Has a travel speed.
 
 > **Design Intent:** Tying cargo to individual ships means combat has real economic consequences. Losing part of a fleet means losing the resources those specific ships were carrying.
+
+### Scout Vessel
+- Purpose: **Discover uncolonized planets**.
+- Reveals planet properties (resource pools, building slots, etc.) on arrival.
+- Built at a Shipyard from Iron Ingots.
+- Has a travel speed (likely the fastest ship type).
 
 ## Mission Types (MVP)
 
@@ -44,6 +50,18 @@ Fleets are the primary way players project power and move resources across space
 - Resources are loaded from the **origin planet's storage** before departure.
 - On arrival, resources are unloaded into the **destination planet's storage**.
 - Destination must be a planet **owned by the same player**.
+
+### Scout
+- Fleet must contain at least one **Scout Vessel**.
+- Target is an **undiscovered planet** (coordinates or solar system).
+- On arrival, the planet's properties are **revealed** to the player (resource pools, building slots, etc.).
+- The Scout Vessel is **not consumed** — it remains at the destination after scouting.
+
+### Move
+- Any fleet composition.
+- Simply **relocates ships** from one planet to another.
+- No cargo, no mission objective — just repositioning.
+- Destination must be a planet **owned by the same player** or a scouted planet.
 
 > **Post-MVP Note:** Additional mission types are planned: Trade (send to other players via market), Espionage (scout enemy planets/fleets), Interception (combat fleets in transit or at orbit), and military missions.
 

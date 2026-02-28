@@ -17,7 +17,7 @@ The score calculation takes into account **all player-owned assets**:
 
 ## Behavior
 
-- Score is **recalculated regularly** (per tick or on demand — TBD).
+- Score is **recalculated on demand** using lazy calculation (consistent with the event-driven engine).
 - Score reflects **current state** — if a player loses a planet or a fleet is destroyed, their score drops accordingly.
 - Score is **visible** on leaderboards to all players.
 
