@@ -6,12 +6,12 @@ Voidforge calculates a **score** for each player based on everything they own. T
 
 ## Score Inputs
 
-The score calculation takes into account **all player-owned assets**:
+The score calculation takes into account **all player-owned assets**, including incomplete ones:
 
 - **Planets** — Number of colonized planets.
-- **Buildings** — Number and type of buildings constructed across all planets.
-- **Fleets** — Ships owned, including those in transit.
-- **Resources** — Total resources stockpiled across all planetary storage **and in transit** (loaded on cargo vessels).
+- **Buildings** — Number and type of buildings across all planets, **including those under construction**.
+- **Ships** — All ships: on planet rosters, in transit, and **under construction** in Shipyards.
+- **Resources** — Total resources across all planetary storage **and in transit** (loaded on cargo vessels).
 
 > **TODO:** Define specific point values / weighting for each category. Some assets may be worth more than others (e.g., a Shipyard might score higher than a Drill, a Colony Ship higher than a Cargo Vessel).
 

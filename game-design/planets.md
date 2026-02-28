@@ -9,9 +9,10 @@ All planets — owned or not — share the same set of properties. The differenc
 ## Ownership
 
 - A planet is owned by **exactly one player**, or by no one.
-- Ownership is gained through colonization (details TBD).
-- Ownership can be lost (e.g., through conquest — details TBD).
+- Ownership is gained through colonization (sending a Colony Ship to an uncolonized, scouted planet).
 - No shared/alliance ownership in MVP scope.
+
+> **MVP Note:** In MVP, there is **no way to lose a planet**. Ownership is permanent once established. Conquest mechanics are planned for post-MVP.
 
 ## Spatial Model
 

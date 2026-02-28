@@ -42,21 +42,26 @@ Fleets are the primary way players project power and move resources across space
 ### Colonize
 - Fleet must contain at least one **Colony Ship**.
 - Target must be an **uncolonized planet** that the player has scouted.
-- On arrival, the Colony Ship is consumed and the planet becomes owned by the player.
-- Any other ships in the fleet remain as a fleet at the new planet.
+- On arrival, **one** Colony Ship is consumed and the planet becomes owned by the player. Any additional Colony Ships remain in the fleet.
+- After colonization, **cargo is automatically unloaded** into the new planet's storage (same partial-unload rules apply if storage is full).
+- Remaining ships are added to the new planet's ship roster.
 
 ### Transport
 - Fleet must contain at least one **Cargo Vessel**.
 - Resources are loaded from the **origin planet's storage** before departure.
+- Cargo is distributed **automatically** across Cargo Vessels based on capacity. A single Cargo Vessel can carry a **mix of resource types** — capacity is measured in **tonnage**, not per-type.
 - On arrival, resources are unloaded into the **destination planet's storage**.
-- **If destination storage is full:** Partial unload — storage is filled to capacity, remaining resources stay on the ships.
+- **If destination storage is full:** Partial unload — storage is filled to capacity, remaining resources stay on the ships. Players can **trigger another unload** later once storage frees up.
 - Destination must be a planet **owned by the same player**.
 
 ### Scout
 - Fleet must contain at least one **Scout Vessel**.
-- Target is an **undiscovered planet** (coordinates or solar system).
-- On arrival, the planet's properties are **revealed** to the player (resource pools, building slots, etc.).
+- Target is **any planet** — undiscovered, previously scouted, or even owned by another player.
+- On arrival, the planet's **current properties** are revealed/updated for the player (resource pools, building slots, buildings, etc.).
+- Scouting a previously-scouted or enemy planet provides **updated information** (e.g., new buildings, depleted resource pools, stationed ships).
 - The Scout Vessel is **not consumed** — it remains at the destination after scouting.
+
+> **Design Intent:** Scouting serves double duty as early-stage espionage. Before combat mechanics exist, this is the primary way to gather intelligence on other players.
 
 ### Move
 - Any fleet composition.
@@ -72,10 +77,20 @@ Fleets are the primary way players project power and move resources across space
 - Travel time is based on the **3D coordinate distance** between the two planets and the **fleet's speed** (determined by its slowest ship).
 - Fleets in transit **can be cancelled**. A cancelled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back. (e.g., if cancelled 5 hours into a 12-hour trip, the return takes 5 hours.)
 
+## Ship Roster
+
+Each planet maintains a **ship roster** — a list of ships stationed there and available for fleet assembly.
+
+- Ships completed by a Shipyard are added to the **local planet's roster**.
+- When a fleet arrives and completes its mission, surviving ships are added to the **destination planet's roster**.
+- A fleet can be **disbanded** at any planet, returning all its ships to that planet's roster.
+- Ships on a roster can be **selected and assembled into new fleets**.
+- Ships can remain on the roster of unowned planets indefinitely.
+
 ## Fleet Lifecycle
 
-1. **Assembly** — Ships are selected from a planet. Resources are loaded onto Cargo Vessels if applicable.
-2. **Departure** — Fleet leaves the planet and enters transit.
+1. **Assembly** — Ships are selected from a planet's roster. Resources are loaded onto Cargo Vessels if applicable.
+2. **Departure** — Fleet leaves the planet and enters transit. Ships are removed from the planet's roster.
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
-4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
-5. **Post-mission** — Non-consumed ships remain at the destination planet (can be formed into new fleets or sent home). Ships can remain at unowned planets indefinitely.
+4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo, scout).
+5. **Post-mission** — Non-consumed ships are added to the destination planet's ship roster.

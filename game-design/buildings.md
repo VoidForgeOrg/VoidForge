@@ -32,7 +32,8 @@ Buildings are constructed on planets in **building slots**. They form the backbo
 - A single Shipyard can build up to **3 ships in parallel**. Each ship has its own build duration and ingot consumption rate.
 - Ships are **built over time** — each ship type has a build duration and total ingot cost.
 - **Halts** when Iron Ingots are unavailable. Resumes when supply is restored.
-- The Shipyard itself consumes energy while operational, but individual ships under construction **do not add extra energy draw**.
+- The Shipyard consumes **full energy when actively building**, and **5% energy when idle** (no ships in queue).
+- Individual ships under construction **do not add extra energy draw** beyond the Shipyard's base consumption.
 
 ### Generator (Energy)
 - Produces **energy (MW)** for the planet.
@@ -48,6 +49,7 @@ Buildings are constructed on planets in **building slots**. They form the backbo
 - A building under construction **occupies a slot** and consumes ingots, but **does not consume energy**. Energy draw begins only once the building is completed and operational.
 - **If Iron Ingots run out mid-construction:** The build **halts** until more ingots are available. Build progress resumes when supply is restored.
 - **Multiple buildings can be constructed in parallel** on the same planet (limited by available slots and ingot supply). Each construction consumes ingots independently.
+- Construction can be **cancelled** at any time. **No resources are refunded**, and the building slot is **freed immediately**.
 - Each planet manages its own construction independently.
 
 > **Design Intent:** Continuous consumption means players don't need all resources upfront. They can start ambitious builds early and feed them over time, including via transport fleets from other planets. It also integrates naturally with the lazy calculation engine — construction is just another rate-based process.
