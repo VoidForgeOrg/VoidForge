@@ -4,6 +4,16 @@
 
 Voidforge is a persistent space strategy MMO where players build empires across a universe of planets, manage economies, and expand through exploration and colonization. The game is built as a **headless engine** — all logic runs server-side via an API, and any client (web, mobile, CLI, VR) can interact with it.
 
+## Detailed Documents
+
+- [Planets](planets.md) — Ownership, solar systems, starting conditions, visibility & discovery
+- [Resources](resources.md) — Resource types, pools, storage, energy, distribution rules
+- [Buildings](buildings.md) — Building types, construction, demolition, energy dependency
+- [Fleets & Space Travel](fleets.md) — Ship types, missions, travel, ship roster, fleet lifecycle
+- [Game Engine](engine.md) — Event-driven engine, lazy calculation, checkpoints, cascading events
+- [Scoring](scoring.md) — Score calculation and leaderboards
+- [Player Actions](player-actions.md) — Complete list of MVP player actions
+
 ## The Universe
 
 The game world is a **3D space** containing **solar systems**, each with multiple **planets**. All solar system locations are visible on the star map, but planet details are hidden until scouted.
