@@ -28,10 +28,10 @@ Buildings are constructed on planets in **building slots**. They form the backbo
 
 ### Shipyard (Production)
 - Constructs **ships** from Iron Ingots.
-- Pulls materials from planetary storage at the start of each build.
-- Ships are **built over time** (queued production — each ship has a build duration).
-- **Halts** when required materials are unavailable (consumes only 5% energy when halted).
-- Consumes energy.
+- Ship construction **consumes Iron Ingots continuously** at a steady rate over the build duration (same model as building construction).
+- Ships are **built over time** (queued production — each ship type has a build duration and total ingot cost).
+- **Halts** when Iron Ingots are unavailable. Resumes when supply is restored.
+- The Shipyard itself consumes energy while operational, but individual ships under construction **do not add extra energy draw**.
 
 ### Generator (Energy)
 - Produces **energy (MW)** for the planet.
@@ -42,10 +42,13 @@ Buildings are constructed on planets in **building slots**. They form the backbo
 
 ## Construction
 
-- Buildings are **constructed over time** — each building type has a build duration.
-- All buildings cost **Iron Ingots** to construct (specific amounts TBD per building type).
-- Ingots are consumed from planetary storage at the **start** of construction.
+- Buildings are **constructed over time** — each building type has a build duration and a total Iron Ingot cost.
+- Construction **consumes Iron Ingots continuously** from planetary storage at a steady rate over the build duration (total cost / build time = consumption rate).
+- A building under construction **occupies a slot** and consumes ingots, but **does not consume energy**. Energy draw begins only once the building is completed and operational.
+- **If Iron Ingots run out mid-construction:** The build **halts** until more ingots are available. Build progress resumes when supply is restored.
 - Each planet manages its own construction queue independently.
+
+> **Design Intent:** Continuous consumption means players don't need all resources upfront. They can start ambitious builds early and feed them over time, including via transport fleets from other planets. It also integrates naturally with the lazy calculation engine — construction is just another rate-based process.
 
 ## Demolition
 
