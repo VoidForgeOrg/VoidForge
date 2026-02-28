@@ -11,7 +11,7 @@ The score calculation takes into account **all player-owned assets**:
 - **Planets** — Number of colonized planets.
 - **Buildings** — Number and type of buildings constructed across all planets.
 - **Fleets** — Ships owned, including those in transit.
-- **Resources** — Total resources stockpiled across all planetary storage.
+- **Resources** — Total resources stockpiled across all planetary storage **and in transit** (loaded on cargo vessels).
 
 > **TODO:** Define specific point values / weighting for each category. Some assets may be worth more than others (e.g., a Shipyard might score higher than a Drill, a Colony Ship higher than a Cargo Vessel).
 

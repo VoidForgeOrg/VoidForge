@@ -49,6 +49,7 @@ Fleets are the primary way players project power and move resources across space
 - Fleet must contain at least one **Cargo Vessel**.
 - Resources are loaded from the **origin planet's storage** before departure.
 - On arrival, resources are unloaded into the **destination planet's storage**.
+- **If destination storage is full:** Partial unload — storage is filled to capacity, remaining resources stay on the ships.
 - Destination must be a planet **owned by the same player**.
 
 ### Scout
@@ -68,8 +69,8 @@ Fleets are the primary way players project power and move resources across space
 ## Travel
 
 - Travel is **linear** — fleets move in a straight line from origin to destination.
-- Travel time is based on the **coordinate distance** between the two planets and the **fleet's speed** (determined by its slowest ship).
-- Fleets in transit are committed — details on recalling or redirecting fleets TBD.
+- Travel time is based on the **3D coordinate distance** between the two planets and the **fleet's speed** (determined by its slowest ship).
+- Fleets in transit **can be cancelled**. A cancelled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back. (e.g., if cancelled 5 hours into a 12-hour trip, the return takes 5 hours.)
 
 ## Fleet Lifecycle
 
@@ -77,4 +78,4 @@ Fleets are the primary way players project power and move resources across space
 2. **Departure** — Fleet leaves the planet and enters transit.
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
 4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
-5. **Post-mission** — Non-consumed ships remain at the destination planet (can be formed into new fleets or sent home).
+5. **Post-mission** — Non-consumed ships remain at the destination planet (can be formed into new fleets or sent home). Ships can remain at unowned planets indefinitely.

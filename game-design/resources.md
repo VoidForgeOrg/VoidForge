@@ -35,6 +35,14 @@ Each planet has **finite, per-resource-type pools** representing the natural dep
 
 > **MVP Scope:** Pools do not regenerate. Once depleted, they are permanently exhausted.
 
+## Resource Distribution
+
+When multiple buildings compete for the same resource (e.g., 2 Refineries consuming Iron Ore, or a Shipyard and construction both consuming Iron Ingots), the available supply is **split evenly** among all consumers.
+
+**Example:** A planet produces 10t ore/hr and has 2 Refineries that each want 8t/hr. Each Refinery receives 5t/hr and operates at reduced throughput.
+
+> **Design Intent:** Even distribution prevents any single building from starving others. Players must plan their building ratios to avoid bottlenecks.
+
 ## Planetary Storage
 
 All extracted and refined resources are held in **planetary storage** on the planet where they exist.

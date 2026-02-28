@@ -16,7 +16,7 @@ All planets — owned or not — share the same set of properties. The differenc
 ## Spatial Model
 
 - Planets exist within **solar systems**.
-- Solar systems (and planets within them) are positioned using a **coordinate system** in space.
+- Solar systems (and planets within them) are positioned using a **3D coordinate system** in space.
 - Distance between locations is meaningful — it will factor into travel time and fleet logistics (see fleet/travel docs).
 
 ## Solar Systems
@@ -37,12 +37,16 @@ The Homeworld comes with:
 
 > **Design Intent:** The starting setup gives players a functional economy from the start — ore is being mined, refined into ingots, and the player can immediately begin building. Their first decisions are what to construct next: more industry, a Shipyard to expand, etc.
 
+**New colonies** (non-Homeworld) start **empty** — no buildings, no energy. Players must transport Iron Ingots to the new colony and build infrastructure from scratch. Colonizing is a serious logistical investment: a Colony Ship alone claims the planet, but a Cargo Vessel with building materials should accompany it.
+
+> **Design Intent:** This makes expansion a strategic commitment, not just a land grab. Players must plan supply chains to support new colonies.
+
 ## Visibility & Discovery
 
-- **Colonized planets** belonging to a player are fully visible to that player.
-- **Uncolonized planets** are **not visible** to players until scouted/discovered.
-- Scouting is done by sending a fleet with a **Scout Vessel** to a target location (see [fleets.md](fleets.md)).
-- Once scouted, a planet's properties (resource pools, building slots, etc.) are permanently revealed to that player.
+- The **star map** is visible to all players — players can see solar system locations and know that planets exist within them.
+- However, **planet details** (resource pools, building slots, storage capacity) are **hidden** until scouted.
+- Scouting is done by sending a fleet with a **Scout Vessel** to a target planet (see [fleets.md](fleets.md)).
+- Once scouted, a planet's properties are **permanently revealed** to that player.
 
 ## Planet Properties
 
