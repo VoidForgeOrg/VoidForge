@@ -30,7 +30,9 @@ Buildings are constructed on planets in **building slots**. They form the backbo
 - Constructs **ships** from Iron Ingots.
 - Ship construction **consumes Iron Ingots continuously** at a steady rate over the build duration (same model as building construction).
 - A single Shipyard can build up to **3 ships in parallel**. Each ship has its own build duration and ingot consumption rate.
+- Players can **queue any number of ships** beyond the 3 parallel slots. Queued ships start building automatically as parallel slots free up.
 - Ships are **built over time** — each ship type has a build duration and total ingot cost.
+- Individual ship builds can be **cancelled** at any time. **No resources are refunded**, and the parallel build slot is freed immediately.
 - **Halts** when Iron Ingots are unavailable. Resumes when supply is restored.
 - The Shipyard consumes **full energy when actively building**, and **5% energy when idle** (no ships in queue).
 - Individual ships under construction **do not add extra energy draw** beyond the Shipyard's base consumption.

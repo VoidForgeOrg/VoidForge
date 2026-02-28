@@ -36,7 +36,7 @@ The Homeworld comes with:
 - **1 Generator** (already built and operational)
 - **Starting resources** in planetary storage (specific amounts TBD)
 
-> **Design Intent:** The starting setup gives players a functional economy from the start — ore is being mined, refined into ingots, and the player can immediately begin building. Their first decisions are what to construct next: more industry, a Shipyard to expand, etc.
+> **Design Intent:** The starting setup gives players a functional economy from the start — ore is being mined, refined into ingots, and the player can immediately begin building. Their first decisions are what to construct next: more industry, a Shipyard to expand, etc. The starting Generator must produce enough energy for the initial buildings **plus headroom** for early growth.
 
 **New colonies** (non-Homeworld) start **empty** — no buildings, no energy. Players must transport Iron Ingots to the new colony and build infrastructure from scratch. Colonizing is a serious logistical investment: a Colony Ship alone claims the planet, but a Cargo Vessel with building materials should accompany it.
 
@@ -46,8 +46,8 @@ The Homeworld comes with:
 
 - The **star map** is visible to all players — players can see solar system locations and know that planets exist within them.
 - However, **planet details** (resource pools, building slots, storage capacity) are **hidden** until scouted.
-- Scouting is done by sending a fleet with a **Scout Vessel** to a target planet (see [fleets.md](fleets.md)).
-- Once scouted, a planet's properties are **permanently revealed** to that player.
+- Scouting is done by sending **any fleet** to a target planet — all ships can perform scouting on arrival. **Scout Vessels** are simply cheaper and faster, making them ideal for exploration (see [fleets.md](fleets.md)).
+- Once scouted, a planet becomes **permanently discovered** (always visible on the map). However, the intel is a **snapshot** — it can become outdated as the planet changes. Re-scouting refreshes the information.
 
 ## Planet Properties
 

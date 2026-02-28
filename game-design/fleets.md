@@ -32,10 +32,10 @@ Fleets are the primary way players project power and move resources across space
 > **Design Intent:** Tying cargo to individual ships means combat has real economic consequences. Losing part of a fleet means losing the resources those specific ships were carrying.
 
 ### Scout Vessel
-- Purpose: **Discover uncolonized planets**.
-- Reveals planet properties (resource pools, building slots, etc.) on arrival.
+- Purpose: **Exploration and reconnaissance**.
+- All ships can scout on arrival, but Scout Vessels are **cheaper to build and faster to travel**, making them the ideal exploration ship.
 - Built at a Shipyard from Iron Ingots.
-- Has a travel speed (likely the fastest ship type).
+- Has a travel speed — **the fastest ship type**.
 
 ## Mission Types (MVP)
 
@@ -45,6 +45,7 @@ Fleets are the primary way players project power and move resources across space
 - On arrival, **one** Colony Ship is consumed and the planet becomes owned by the player. Any additional Colony Ships remain in the fleet.
 - After colonization, **cargo is automatically unloaded** into the new planet's storage (same partial-unload rules apply if storage is full).
 - Remaining ships are added to the new planet's ship roster.
+- **If the target planet is already colonized** (by another player who arrived first): the Colonize mission **fails**. The Colony Ship is **not consumed**. The fleet idles at the planet. The player receives updated intel about the planet (same as scouting).
 
 ### Transport
 - Fleet must contain at least one **Cargo Vessel**.
@@ -55,13 +56,12 @@ Fleets are the primary way players project power and move resources across space
 - Destination must be a planet **owned by the same player**.
 
 ### Scout
-- Fleet must contain at least one **Scout Vessel**.
+- **Any fleet composition** — all ships can scout on arrival. No specific ship type required.
 - Target is **any planet** — undiscovered, previously scouted, or even owned by another player.
-- On arrival, the planet's **current properties** are revealed/updated for the player (resource pools, building slots, buildings, etc.).
-- Scouting a previously-scouted or enemy planet provides **updated information** (e.g., new buildings, depleted resource pools, stationed ships).
-- The Scout Vessel is **not consumed** — it remains at the destination after scouting.
+- On arrival, the planet's **current properties** are revealed/updated for the player (resource pools, building slots, buildings, stationed ships, etc.).
+- Scouting a previously-scouted or enemy planet provides **updated information** (e.g., new buildings, depleted resource pools). The planet stays discovered, but the intel is a snapshot that can go stale.
 
-> **Design Intent:** Scouting serves double duty as early-stage espionage. Before combat mechanics exist, this is the primary way to gather intelligence on other players.
+> **Design Intent:** Scouting serves double duty as early-stage espionage. Before combat mechanics exist, this is the primary way to gather intelligence on other players. Scout Vessels are simply the cheapest and fastest way to do it.
 
 ### Move
 - Any fleet composition.

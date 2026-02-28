@@ -38,8 +38,21 @@ When an event fires or a state-changing action occurs, the engine **checkpoints*
 - A fleet arrives (resources unloaded into storage)
 - A player issues a new command (start building, send fleet)
 
+## Cascading Events
+
+Some events trigger chain reactions that must be resolved as part of the same checkpoint. These are **MVP scope** — they represent the normal lifecycle of a planet.
+
+### Examples
+
+- **Ore pool depletes** → Drill halts (5% energy) → energy balance changes → other buildings' productivity may shift
+- **Ore storage empties** → Refinery halts (5% energy) → ingot production stops → Shipyard halts → construction halts
+- **New building comes online** → energy consumption increases → planet may become overloaded → all building productivity drops
+- **Building demolished** → energy consumption decreases → planet may exit overload → productivity recovers
+
+The engine must resolve these dependency chains **within a single checkpoint** to maintain a consistent state.
+
+> **Technical Note:** The exact implementation of cascading resolution will be defined during technical refinement, but the design must support these scenarios from day one.
+
 ## State Integrity
 
 The engine remains the **ultimate arbiter**. Every player action submitted via the API is validated against the current calculated state before being accepted. The event queue and lazy calculation ensure a consistent, deterministic source of truth.
-
-> **Post-MVP Note:** Cascading events (e.g., ore depletion causing refinery stall, energy overload changing production rates) and complex player-vs-player interactions will require careful handling of dependency chains. These details will be resolved during technical refinement.
