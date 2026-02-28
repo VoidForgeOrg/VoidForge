@@ -27,7 +27,7 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 
 ### Queue Ship Construction
 - Select a Shipyard on a planet.
-- Choose a ship type (Colony Ship, Cargo Vessel, Scout Vessel) and add it to the build queue.
+- Choose a ship type (Colony Ship, Cargo Vessel) and add it to the build queue.
 - Up to 3 ships are built in parallel. Additional ships wait in queue and start automatically as slots free up.
 - Each ship consumes Iron Ingots continuously from planetary storage during its build.
 
@@ -45,10 +45,9 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 
 ### Send Fleet on Mission
 - Assign a mission to an assembled fleet:
-  - **Colonize** — Target: uncolonized, scouted planet. Requires at least one Colony Ship.
+  - **Colonize** — Target: uncolonized planet. Requires at least one Colony Ship.
   - **Transport** — Target: own planet. Requires at least one Cargo Vessel.
-  - **Scout** — Target: any planet. Any fleet composition.
-  - **Move** — Target: own or scouted planet. Any fleet composition.
+  - **Move** — Target: any planet. Any fleet composition.
 - Fleet departs and enters transit.
 
 ### Cancel Fleet in Transit

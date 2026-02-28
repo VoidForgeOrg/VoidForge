@@ -6,7 +6,7 @@ Voidforge is a persistent space strategy MMO where players build empires across 
 
 ## Detailed Documents
 
-- [Planets](planets.md) — Ownership, solar systems, starting conditions, visibility & discovery
+- [Planets](planets.md) — Ownership, solar systems, starting conditions, visibility
 - [Resources](resources.md) — Resource types, pools, storage, energy, distribution rules
 - [Buildings](buildings.md) — Building types, construction, demolition, energy dependency
 - [Fleets & Space Travel](fleets.md) — Ship types, missions, travel, ship roster, fleet lifecycle
@@ -16,7 +16,7 @@ Voidforge is a persistent space strategy MMO where players build empires across 
 
 ## The Universe
 
-The game world is a **3D space** containing **solar systems**, each with multiple **planets**. All solar system locations are visible on the star map, but planet details are hidden until scouted.
+The game world is a **3D space** containing **solar systems**, each with multiple **planets**. All planet information is fully visible to all players in MVP.
 
 - **Planets** are the core entity — each has resource pools, building slots, storage capacity, and an energy grid
 - **Solar systems** group planets together (no system-level mechanics in MVP)
@@ -29,7 +29,7 @@ A new player receives a **Homeworld** with:
 - Starting resources in storage
 - Enough energy headroom for early growth
 
-From here, the player builds up their economy, constructs a Shipyard, builds ships, scouts nearby planets, and eventually colonizes new worlds.
+From here, the player builds up their economy, constructs a Shipyard, builds ships, and colonizes new worlds.
 
 ## Economy
 
@@ -75,24 +75,21 @@ Ships are built at Shipyards and stored on a **planet's ship roster**. Players a
 |------|---------|-------|
 | **Colony Ship** | Colonize planets | Consumed on use |
 | **Cargo Vessel** | Transport resources | Fixed tonnage capacity, mixed cargo |
-| **Scout Vessel** | Exploration | Cheapest and fastest ship |
 
 ### Missions (MVP)
 
 | Mission | Target | Requirements | On Arrival |
 |---------|--------|-------------|------------|
-| **Colonize** | Uncolonized, scouted planet | Colony Ship | Colony Ship consumed, cargo auto-unloads, planet claimed |
+| **Colonize** | Uncolonized planet | Colony Ship | Colony Ship consumed, cargo auto-unloads, planet claimed |
 | **Transport** | Own planet | Cargo Vessel | Cargo unloaded (partial if storage full) |
-| **Scout** | Any planet | Any ship | Planet intel revealed/updated |
-| **Move** | Own or scouted planet | Any ship | Ships relocated |
+| **Move** | Any planet | Any ship | Ships relocated |
 
 ### Fleet Mechanics
 - Fleet speed = slowest ship
 - Linear point-to-point travel based on 3D distance
 - Fleets can be cancelled mid-transit (return time = time already traveled)
 - Fleets can be disbanded (ships return to planet roster)
-- Any ship can scout; Scout Vessels are just cheaper and faster
-- Failed colonization (planet already taken): colony ship preserved, fleet idles, intel gathered
+- Failed colonization (planet already taken): colony ship preserved, fleet idles
 
 ## Engine
 
@@ -124,6 +121,7 @@ Players have a **score** based on all owned assets:
 ## What's NOT in MVP
 
 The following are planned for post-MVP:
+- Fog of war, scouting mechanics, and Scout Vessels
 - Combat and military ships
 - Alliances / clans
 - Tech tree (Astrophysics, Materials Science, Applied Weaponry)

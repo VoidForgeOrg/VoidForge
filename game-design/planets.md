@@ -9,7 +9,7 @@ All planets — owned or not — share the same set of properties. The differenc
 ## Ownership
 
 - A planet is owned by **exactly one player**, or by no one.
-- Ownership is gained through colonization (sending a Colony Ship to an uncolonized, scouted planet).
+- Ownership is gained through colonization (sending a Colony Ship to an uncolonized planet).
 - No shared/alliance ownership in MVP scope.
 
 > **MVP Note:** In MVP, there is **no way to lose a planet**. Ownership is permanent once established. Conquest mechanics are planned for post-MVP.
@@ -42,12 +42,11 @@ The Homeworld comes with:
 
 > **Design Intent:** This makes expansion a strategic commitment, not just a land grab. Players must plan supply chains to support new colonies.
 
-## Visibility & Discovery
+## Visibility
 
-- The **star map** is visible to all players — players can see solar system locations and know that planets exist within them.
-- However, **planet details** (resource pools, building slots, storage capacity) are **hidden** until scouted.
-- Scouting is done by sending **any fleet** to a target planet — all ships can perform scouting on arrival. **Scout Vessels** are simply cheaper and faster, making them ideal for exploration (see [fleets.md](fleets.md)).
-- Once scouted, a planet becomes **permanently discovered** (always visible on the map). However, the intel is a **snapshot** — it can become outdated as the planet changes. Re-scouting refreshes the information.
+- All planets and their properties (resource pools, building slots, storage capacity, ownership) are **fully visible** to all players at all times.
+
+> **Post-MVP Note:** Fog of war, scouting mechanics, and scout ships are planned for future iterations. In MVP, full visibility keeps things simple and lets players make informed expansion decisions.
 
 ## Planet Properties
 
