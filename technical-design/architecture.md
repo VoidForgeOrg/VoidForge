@@ -28,7 +28,7 @@
 
 ### Rationale
 
-The Critter Stack was selected over Orleans, Akka.NET, and plain ASP.NET Core after evaluating all candidates against Voidforge's requirements (see `technical-design/reaseach-from-opus.md` for the full comparison). The key factors:
+The Critter Stack was selected over Orleans, Akka.NET, and plain ASP.NET Core after evaluating all candidates against Voidforge's requirements (see `technical-design/research-from-opus.md` for the full comparison). The key factors:
 
 - **Native lazy calculation fit.** Marten's inline snapshot projections *are* the checkpoint-and-rate model described in `game-design/engine.md`. `FetchForWriting<Planet>()` loads the latest snapshot; `Apply()` methods update checkpoint values when events fire. No impedance mismatch.
 - **Event sourcing built in.** Planets, fleets, and players are naturally modeled as event streams. Marten provides projections (inline, async, live), stream versioning, and optimistic concurrency out of the box.
