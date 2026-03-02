@@ -49,6 +49,9 @@ secrets.json
 # Environment
 dockerfiles/.env
 
+# Claude Code hooks
+.claude/hooks/hook-debug.log
+
 # Test results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
