@@ -1,0 +1,14 @@
+.git
+.github
+**/bin
+**/obj
+**/node_modules
+docs
+game-design
+plans
+technical-design
+.env
+.env.*
+!.env.example
+*.md
+.claude
