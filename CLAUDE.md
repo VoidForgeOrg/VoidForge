@@ -46,3 +46,12 @@ All detailed design docs live in `game-design/`:
 - Tech stack and implementation details are **not yet decided** — design docs focus purely on game mechanics
 - Specific numeric values (build times, costs, speeds, storage caps) are **TBD** — to be defined during balancing
 - Post-MVP features noted in docs: fog of war/scouting, combat, alliances, tech tree, galactic market, planet traits, advanced travel (hyperlanes/jump gates), branching resource trees
+
+## Quick Reference
+
+```bash
+dotnet restore src/Voidforge.slnx     # Restore packages
+dotnet build src/Voidforge.slnx       # Build solution
+dotnet test src/Voidforge.slnx        # Run tests
+dotnet format src/Voidforge.slnx      # Format code
+```
