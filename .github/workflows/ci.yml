@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  # Dimension 2: Linting & Formatting
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore src/Voidforge.slnx
+      - run: dotnet format src/Voidforge.slnx --verify-no-changes --verbosity diagnostic
+
+  # Dimension 3: Type Safety + Dimension 5/6: Code Quality (Roslynator, Meziantou)
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore src/Voidforge.slnx
+      - run: dotnet build src/Voidforge.slnx --no-restore -warnaserror --verbosity quiet
+
+  # Dimension 4: Security Analysis
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore src/Voidforge.slnx
+      - run: |
+          OUTPUT=$(dotnet list src/Voidforge.slnx package --vulnerable --include-transitive)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -qi "has the following vulnerable packages" && exit 1 || exit 0
+
+  # Dimension 1: Testing & Coverage — uncomment when test projects are added
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: '9.0.x'
+  #     - run: dotnet restore src/Voidforge.slnx
+  #     - run: dotnet test src/Voidforge.slnx --no-restore --collect:"XPlat Code Coverage" --verbosity normal
