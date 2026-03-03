@@ -38,3 +38,5 @@ app.MapHealthChecks("/health");
 app.MapWolverineEndpoints();
 
 return await app.RunJasperFxCommands(args);
+
+public partial class Program;

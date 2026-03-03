@@ -47,13 +47,29 @@ jobs:
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -qi "has the following vulnerable packages" && exit 1 || exit 0
 
-  # Dimension 1: Testing & Coverage — uncomment when test projects are added
-  # test:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-dotnet@v4
-  #       with:
-  #         dotnet-version: '9.0.x'
-  #     - run: dotnet restore src/Voidforge.slnx
-  #     - run: dotnet test src/Voidforge.slnx --no-restore --collect:"XPlat Code Coverage" --verbosity normal
+  # Dimension 1: Testing & Coverage
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: voidforge_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      ConnectionStrings__Marten: Host=localhost;Port=5432;Database=voidforge_test;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore src/Voidforge.slnx
+      - run: dotnet test src/Voidforge.slnx --no-restore --collect:"XPlat Code Coverage" --settings src/coverlet.runsettings --verbosity normal
