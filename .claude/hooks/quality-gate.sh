@@ -16,8 +16,9 @@ SOLUTION="src/Voidforge.slnx"
 
 declare -A TOOL_HINTS
 TOOL_HINTS=(
-    [dotnet-restore]="Check src/Voidforge.Api/Voidforge.Api.csproj and src/Directory.Build.props for malformed package references or missing NuGet sources. Run 'dotnet restore src/Voidforge.slnx' manually to see the full error."
+    [dotnet-restore]="Check src/Voidforge.Api/Voidforge.Api.csproj, src/Voidforge.Tests/Voidforge.Tests.csproj, and src/Directory.Build.props for malformed package references or missing NuGet sources. Run 'dotnet restore src/Voidforge.slnx' manually to see the full error."
     [dotnet-build]="Read the file at the reported line and column number. Fix the compiler error or analyzer warning. Run 'dotnet build src/Voidforge.slnx --no-restore' to re-check a single project after fixing."
+    [dotnet-test]="Read the failing test in src/Voidforge.Tests/ and the source it covers. Run 'dotnet test src/Voidforge.slnx --filter <TestName> --no-build' to re-run a single test. If coverage is below 70%, add tests for uncovered paths in src/Voidforge.Api/. If the error is a database connection failure, ensure PostgreSQL is running locally with a 'voidforge_test' database (same credentials as appsettings.json)."
     [dotnet-format]="Run 'dotnet format src/Voidforge.slnx --include <file>' to auto-fix formatting. Check src/.editorconfig rules if the fix doesn't apply."
     [security-audit]="Run 'dotnet list src/Voidforge.slnx package --vulnerable --include-transitive' to see all vulnerable packages. Update the affected package version in the .csproj file."
 )
@@ -64,17 +65,18 @@ run_check "dotnet-restore" dotnet restore "$SOLUTION" --verbosity quiet
 # [check:dotnet-build]
 run_check "dotnet-build" dotnet build "$SOLUTION" --no-restore --verbosity quiet -warnaserror
 
+# [check:dotnet-test] — runs tests and enforces 70% line coverage threshold via src/coverlet.runsettings
+run_check "dotnet-test" dotnet test "$SOLUTION" --no-build --no-restore --collect:"XPlat Code Coverage" --settings "src/coverlet.runsettings" --verbosity quiet
+
 # [check:dotnet-format]
 run_check "dotnet-format" dotnet format "$SOLUTION" --verify-no-changes --verbosity quiet
 
 # [check:security-audit]
+debuglog "Running security-audit..."
 VULN_OUTPUT=$(dotnet list "$SOLUTION" package --vulnerable --include-transitive 2>&1)
 if echo "$VULN_OUTPUT" | grep -qi "has the following vulnerable packages"; then
     fail "security-audit" "dotnet list $SOLUTION package --vulnerable --include-transitive" "$VULN_OUTPUT"
 fi
-
-# [check:dotnet-test] — uncomment when test projects are added
-# run_check "dotnet-test" dotnet test "$SOLUTION" --no-build --verbosity quiet
 
 debuglog "=== ALL CHECKS PASSED ==="
 exit 0
