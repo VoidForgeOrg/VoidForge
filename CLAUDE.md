@@ -41,11 +41,24 @@ All detailed design docs live in `game-design/`:
 - `scoring.md` — Score calculation and leaderboards
 - `player-actions.md` — Complete list of MVP player actions
 
+## Technical Design
+
+Architecture and implementation docs live in `technical-design/`:
+- `architecture.md` — Tech stack, database schema, event queue, lazy calculation engine, deployment
+- `project-structure.md` — Folder layout, conventions, build configuration
+- `domain-model.md` — Current aggregates, events, documents, and how to add new ones
+- `authentication.md` — API key auth flow, handler, authorization policy
+- `testing.md` — Test host setup, known pitfalls, coverage
+
 ## Development Notes
 
-- Tech stack and implementation details are **not yet decided** — design docs focus purely on game mechanics
 - Specific numeric values (build times, costs, speeds, storage caps) are **TBD** — to be defined during balancing
 - Post-MVP features noted in docs: fog of war/scouting, combat, alliances, tech tree, galactic market, planet traits, advanced travel (hyperlanes/jump gates), branching resource trees
+
+## Working Conventions
+
+- When implementing a new feature or system, update or create the relevant doc in `technical-design/` to reflect the current state
+- Tests must pass before completing any task
 
 ## Quick Reference
 
