@@ -1,9 +1,12 @@
 using JasperFx;
+using JasperFx.Events;
 using Marten;
+using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
+using Voidforge.Api.Domain;
 using Wolverine;
 using Wolverine.Http;
 using Wolverine.Marten;
@@ -20,6 +23,10 @@ builder.Services.AddMarten(opts =>
     opts.Connection(connectionString);
     opts.DatabaseSchemaName = "voidforge";
     opts.Schema.For<ApiKey>().UniqueIndex(x => x.HashedKey);
+    opts.Events.AppendMode = EventAppendMode.Quick;
+    opts.Events.UseIdentityMapForAggregates = true;
+    opts.Projections.Snapshot<Player>(SnapshotLifecycle.Inline);
+    opts.Schema.For<Player>().UniqueIndex(x => x.Name);
 })
 .UseLightweightSessions()
 .IntegrateWithWolverine();
