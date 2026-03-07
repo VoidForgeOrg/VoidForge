@@ -84,4 +84,14 @@ public sealed class ApiKeyAuthTests : IAsyncLifetime
             s.StatusCodeShouldBe(200);
         });
     }
+
+    [Fact]
+    public async Task SwaggerWithoutKeyReturns200()
+    {
+        await _host.Scenario(s =>
+        {
+            s.Get.Url("/swagger/v1/swagger.json");
+            s.StatusCodeShouldBe(200);
+        });
+    }
 }
