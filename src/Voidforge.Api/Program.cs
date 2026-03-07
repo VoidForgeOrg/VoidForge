@@ -1,6 +1,7 @@
 using JasperFx;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
 using Wolverine;
@@ -40,7 +41,20 @@ builder.Services.AddAuthorizationBuilder()
 
 builder.Services.AddWolverineHttp();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(opts =>
+{
+    opts.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = ApiKeyAuthenticationDefaults.HeaderName,
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+    });
+
+    opts.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecuritySchemeReference("ApiKey", doc), [] },
+    });
+});
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 
 var app = builder.Build();
