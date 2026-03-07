@@ -14,9 +14,11 @@ src/
 │   ├── Domain/                     # Event-sourced aggregates
 │   │   └── Events/                 # Domain events
 │   ├── Endpoints/                  # Wolverine HTTP endpoints + DTOs
+│   ├── WorldGeneration/            # World seeding (hosted service + config)
 │   └── Program.cs                  # App bootstrap (Marten, Wolverine, auth, middleware)
 └── Voidforge.Tests/                # Integration + unit tests
     ├── Auth/                       # Auth-related tests
+    ├── Planets/                    # Planet aggregate + endpoint tests
     ├── Players/                    # Player registration tests
     ├── AppFixture.cs               # Shared test host (Alba + PostgreSQL)
     └── IntegrationCollection.cs    # xUnit collection for shared fixture
@@ -31,6 +33,7 @@ src/
 | `Documents/` | Flat Marten documents (no event stream) | `ApiKey.cs` |
 | `Endpoints/` | Wolverine HTTP endpoint classes + request/response DTOs | `PlayerEndpoints.cs`, `RegisterPlayerRequest.cs` |
 | `Auth/` | Authentication handler, options, defaults | `ApiKeyAuthenticationHandler.cs` |
+| `WorldGeneration/` | World seeding hosted service + configuration | `WorldSeeder.cs`, `WorldGenOptions.cs` |
 
 **Rule**: One public type per file (enforced by Meziantou.Analyzer MA0048).
 
