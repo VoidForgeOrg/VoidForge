@@ -18,7 +18,7 @@ public static class PlayerEndpoints
 {
     [AllowAnonymous]
     [WolverinePost("/api/players/register")]
-    public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>>> Register(
+    public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
         RegisterPlayerRequest request,
         IDocumentSession session,
         IOptions<WorldGenOptions> worldGenOptions)
@@ -31,6 +31,8 @@ public static class PlayerEndpoints
             return TypedResults.Conflict("Player name is already taken.");
         }
 
+        // Perf: loads all uncolonized planet IDs into memory. Replace with COUNT + random offset
+        // or database-side random selection when planet counts grow large.
         var uncolonized = await session.Query<Planet>()
             .Where(p => p.OwnerId == null)
             .Select(p => p.Id)
@@ -38,7 +40,7 @@ public static class PlayerEndpoints
 
         if (uncolonized.Count == 0)
         {
-            return TypedResults.Conflict("No uncolonized planets available.");
+            return TypedResults.StatusCode(503);
         }
 
         var homeworldId = uncolonized[Random.Shared.Next(uncolonized.Count)];
@@ -49,6 +51,8 @@ public static class PlayerEndpoints
         var opts = worldGenOptions.Value;
 
         session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, DateTimeOffset.UtcNow));
+        // Race: two concurrent registrations can colonize the same planet. Fix with optimistic
+        // concurrency (expected version) on Append. Tracked in GitHub issue.
         session.Events.Append(homeworldId, new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots));
         session.Store(new ApiKey
         {
