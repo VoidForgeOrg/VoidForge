@@ -23,7 +23,7 @@ public sealed partial class WorldSeeder(
         }
 
         var opts = options.Value;
-        var random = new Random(42);
+        var random = new Random();
 
         for (var s = 0; s < opts.SolarSystemCount; s++)
         {

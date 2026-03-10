@@ -28,15 +28,6 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
 
-## Enums
-
-### ResourceType
-
-- **File**: `Domain/ResourceType.cs`
-- **Values**: `IronOre`, `IronIngots`
-
-Used to identify resource types for pools, storage, and production chains.
-
 ## Documents
 
 ### ApiKey
