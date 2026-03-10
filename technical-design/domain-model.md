@@ -22,11 +22,20 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 ### Planet
 
 - **File**: `Domain/Planet.cs`
-- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored)`
-- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOreStorageCapacity`, `IronIngotStorageCapacity`, `IronOreStored`, `IronIngotStored`
+- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored, ColonizedAt)`
+- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOre` (ResourcePool), `IronIngot` (ResourcePool)
 - **Marten config**: `opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline)`
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
+
+### ResourcePool (Value Object)
+
+- **File**: `Domain/ResourcePool.cs`
+- **Fields**: `CheckpointValue` (decimal), `Rate` (decimal, units/sec), `StorageCapacity` (decimal), `CheckpointTime` (DateTimeOffset)
+- **Methods**: `GetCurrentValue(now)` — computes `Clamp(checkpoint + rate * elapsed, 0, capacity)`; `Checkpoint(now)` — returns new instance with current value as baseline
+- **Semantics**: Immutable record. Methods return new instances. Rate starts at 0; buildings (#10) will set rates via checkpointing.
+
+Used by `Planet.IronOre` and `Planet.IronIngot`. The query endpoint computes current values at request time using `GetCurrentValue(DateTimeOffset.UtcNow)` — no background ticks needed.
 
 ## Documents
 

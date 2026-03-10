@@ -17,6 +17,8 @@ public static class PlanetEndpoints
             return TypedResults.NotFound();
         }
 
+        var now = DateTimeOffset.UtcNow;
+
         return TypedResults.Ok(new PlanetResponse(
             planet.Id,
             planet.Name,
@@ -24,9 +26,13 @@ public static class PlanetEndpoints
             planet.OwnerId,
             planet.IronOrePool,
             planet.BuildingSlotCount,
-            planet.IronOreStorageCapacity,
-            planet.IronIngotStorageCapacity,
-            planet.IronOreStored,
-            planet.IronIngotStored));
+            new ResourcePoolResponse(
+                planet.IronOre.GetCurrentValue(now),
+                planet.IronOre.Rate,
+                planet.IronOre.StorageCapacity),
+            new ResourcePoolResponse(
+                planet.IronIngot.GetCurrentValue(now),
+                planet.IronIngot.Rate,
+                planet.IronIngot.StorageCapacity)));
     }
 }

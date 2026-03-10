@@ -149,8 +149,8 @@ public sealed class PlayerRegistrationTests
         var planet = await session.LoadAsync<Planet>(response.HomeworldId);
         Assert.NotNull(planet);
         Assert.Equal(response.PlayerId, planet.OwnerId);
-        Assert.True(planet.IronOreStored > 0);
-        Assert.True(planet.IronIngotStored > 0);
+        Assert.True(planet.IronOre.CheckpointValue > 0);
+        Assert.True(planet.IronIngot.CheckpointValue > 0);
     }
 
     [Fact]
