@@ -19,6 +19,15 @@ The domain uses two storage patterns from Marten:
 
 Created during registration via `session.Events.StartStream<Player>(...)`.
 
+### Planet
+
+- **File**: `Domain/Planet.cs`
+- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`
+- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOreStorageCapacity`, `IronIngotStorageCapacity`
+- **Marten config**: `opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline)`
+
+Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
+
 ## Documents
 
 ### ApiKey
@@ -28,6 +37,13 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 - **Unique index**: `HashedKey`
 
 Stores SHA-256 hashed API keys. The raw key is returned once at registration and never stored.
+
+### SolarSystem
+
+- **File**: `Documents/SolarSystem.cs`
+- **Fields**: `Id`, `Name`, `X`, `Y`, `Z` (decimal coordinates), `PlanetIds`
+
+Groups planets into a named system at a 3D position. Created during world seeding.
 
 ## Relationships
 
@@ -41,6 +57,16 @@ Registration (atomic transaction):
 
 Authentication:
   X-API-Key header → SHA-256 hash → query ApiKey doc → PlayerId → ClaimsPrincipal
+
+World Seeding (atomic transaction via IHostedService):
+┌─────────────────────────────────────────────────┐
+│  For each solar system:                         │
+│    For each planet:                             │
+│      StartStream<Planet>(planetId, PlanetCreated)│
+│    Store(new SolarSystem { PlanetIds = [...] }) │
+│  SaveChangesAsync()  → single DB transaction    │
+└─────────────────────────────────────────────────┘
+  Idempotent: skips if SolarSystem count > 0
 ```
 
 ## Adding New Aggregates

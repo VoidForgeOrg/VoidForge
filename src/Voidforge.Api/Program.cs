@@ -7,6 +7,7 @@ using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
+using Voidforge.Api.WorldGeneration;
 using Wolverine;
 using Wolverine.Http;
 using Wolverine.Marten;
@@ -26,6 +27,7 @@ builder.Services.AddMarten(opts =>
     opts.Events.AppendMode = EventAppendMode.Quick;
     opts.Events.UseIdentityMapForAggregates = true;
     opts.Projections.Snapshot<Player>(SnapshotLifecycle.Inline);
+    opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
     opts.Schema.For<Player>().UniqueIndex(x => x.Name);
 })
 .UseLightweightSessions()
@@ -62,6 +64,8 @@ builder.Services.AddSwaggerGen(opts =>
         { new OpenApiSecuritySchemeReference("ApiKey", doc), [] },
     });
 });
+builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
+builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 
 var app = builder.Build();
