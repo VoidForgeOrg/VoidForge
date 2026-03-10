@@ -18,12 +18,12 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetSolarSystemsReturnsSeededSystems()
     {
-        var apiKey = await RegisterAndGetApiKey();
+        var registration = await RegisterPlayer();
 
         var result = await _host.Scenario(s =>
         {
             s.Get.Url("/api/solar-systems");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(200);
         });
 
@@ -45,49 +45,37 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetPlanetByIdReturnsSeededPlanet()
     {
-        var apiKey = await RegisterAndGetApiKey();
-
-        var systemsResult = await _host.Scenario(s =>
-        {
-            s.Get.Url("/api/solar-systems");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var systems = await systemsResult.ReadAsJsonAsync<List<SolarSystemResponse>>();
-        Assert.NotNull(systems);
-        Assert.NotEmpty(systems);
-
-        var planetId = systems[0].PlanetIds[0];
+        var registration = await RegisterPlayer();
 
         var planetResult = await _host.Scenario(s =>
         {
-            s.Get.Url($"/api/planets/{planetId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+            s.Get.Url($"/api/planets/{registration.HomeworldId}");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(200);
         });
 
         var planet = await planetResult.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
-        Assert.Equal(planetId, planet.Id);
+        Assert.Equal(registration.HomeworldId, planet.Id);
         Assert.NotEqual(string.Empty, planet.Name);
-        Assert.Equal(systems[0].Id, planet.SolarSystemId);
-        Assert.Null(planet.OwnerId);
+        Assert.Equal(registration.PlayerId, planet.OwnerId);
         Assert.True(planet.IronOrePool > 0);
         Assert.True(planet.BuildingSlotCount > 0);
         Assert.True(planet.IronOreStorageCapacity > 0);
         Assert.True(planet.IronIngotStorageCapacity > 0);
+        Assert.True(planet.IronOreStored > 0);
+        Assert.True(planet.IronIngotStored > 0);
     }
 
     [Fact]
     public async Task GetPlanetByNonExistentIdReturns404()
     {
-        var apiKey = await RegisterAndGetApiKey();
+        var registration = await RegisterPlayer();
 
         await _host.Scenario(s =>
         {
             s.Get.Url($"/api/planets/{Guid.NewGuid()}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, apiKey);
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(404);
         });
     }
@@ -102,7 +90,7 @@ public sealed class PlanetEndpointTests
         });
     }
 
-    private async Task<string> RegisterAndGetApiKey()
+    private async Task<RegisterPlayerResponse> RegisterPlayer()
     {
         var result = await _host.Scenario(s =>
         {
@@ -113,6 +101,6 @@ public sealed class PlanetEndpointTests
 
         var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
         Assert.NotNull(response);
-        return response.ApiKey;
+        return response;
     }
 }

@@ -49,5 +49,23 @@ public sealed class PlanetAggregateTests
         Assert.Equal(0, planet.BuildingSlotCount);
         Assert.Equal(0, planet.IronOreStorageCapacity);
         Assert.Equal(0, planet.IronIngotStorageCapacity);
+        Assert.Equal(0, planet.IronOreStored);
+        Assert.Equal(0, planet.IronIngotStored);
+    }
+
+    [Fact]
+    public void ApplyPlanetColonizedSetsOwnerAndResources()
+    {
+        var planet = new Planet();
+        var ownerId = Guid.NewGuid();
+
+        planet.Apply(new PlanetColonized(
+            OwnerId: ownerId,
+            IronOreStored: 500,
+            IronIngotStored: 100));
+
+        Assert.Equal(ownerId, planet.OwnerId);
+        Assert.Equal(500, planet.IronOreStored);
+        Assert.Equal(100, planet.IronIngotStored);
     }
 }

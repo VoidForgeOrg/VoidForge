@@ -22,8 +22,8 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 ### Planet
 
 - **File**: `Domain/Planet.cs`
-- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`
-- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOreStorageCapacity`, `IronIngotStorageCapacity`
+- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored)`
+- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOreStorageCapacity`, `IronIngotStorageCapacity`, `IronOreStored`, `IronIngotStored`
 - **Marten config**: `opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline)`
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
@@ -49,11 +49,13 @@ Groups planets into a named system at a 3D position. Created during world seedin
 
 ```
 Registration (atomic transaction):
-┌─────────────────────────────────────────┐
-│  1. StartStream<Player>(playerId, event)│  → mt_events + mt_doc_player
-│  2. Store(new ApiKey { ... })           │  → mt_doc_apikey
-│  3. SaveChangesAsync()                  │  → single DB transaction
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  1. StartStream<Player>(playerId, event)         │  → mt_events + mt_doc_player
+│  2. Append(homeworldId, PlanetColonized)         │  → mt_events + mt_doc_planet
+│  3. Store(new ApiKey { ... })                    │  → mt_doc_apikey
+│  4. SaveChangesAsync()                           │  → single DB transaction
+└──────────────────────────────────────────────────┘
+  Homeworld: random uncolonized planet, colonized with starting resources
 
 Authentication:
   X-API-Key header → SHA-256 hash → query ApiKey doc → PlayerId → ClaimsPrincipal

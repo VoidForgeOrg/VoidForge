@@ -1,3 +1,3 @@
 namespace Voidforge.Api.Endpoints;
 
-public sealed record RegisterPlayerResponse(Guid PlayerId, string ApiKey);
+public sealed record RegisterPlayerResponse(Guid PlayerId, string ApiKey, Guid HomeworldId);

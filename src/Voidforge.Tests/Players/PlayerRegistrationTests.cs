@@ -129,4 +129,49 @@ public sealed class PlayerRegistrationTests
             s.StatusCodeShouldBe(409);
         });
     }
+
+    [Fact]
+    public async Task RegisterAssignsHomeworldWithStartingResources()
+    {
+        var result = await _host.Scenario(s =>
+        {
+            s.Post.Json(new RegisterPlayerRequest($"Player_{Guid.NewGuid():N}")).ToUrl("/api/players/register");
+            s.StatusCodeShouldBe(200);
+        });
+
+        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
+        Assert.NotNull(response);
+        Assert.NotEqual(Guid.Empty, response.HomeworldId);
+
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        await using var session = store.LightweightSession();
+
+        var planet = await session.LoadAsync<Planet>(response.HomeworldId);
+        Assert.NotNull(planet);
+        Assert.Equal(response.PlayerId, planet.OwnerId);
+        Assert.True(planet.IronOreStored > 0);
+        Assert.True(planet.IronIngotStored > 0);
+    }
+
+    [Fact]
+    public async Task TwoPlayersGetDifferentHomeworlds()
+    {
+        var result1 = await _host.Scenario(s =>
+        {
+            s.Post.Json(new RegisterPlayerRequest($"Player_{Guid.NewGuid():N}")).ToUrl("/api/players/register");
+            s.StatusCodeShouldBe(200);
+        });
+
+        var result2 = await _host.Scenario(s =>
+        {
+            s.Post.Json(new RegisterPlayerRequest($"Player_{Guid.NewGuid():N}")).ToUrl("/api/players/register");
+            s.StatusCodeShouldBe(200);
+        });
+
+        var response1 = await result1.ReadAsJsonAsync<RegisterPlayerResponse>();
+        var response2 = await result2.ReadAsJsonAsync<RegisterPlayerResponse>();
+        Assert.NotNull(response1);
+        Assert.NotNull(response2);
+        Assert.NotEqual(response1.HomeworldId, response2.HomeworldId);
+    }
 }

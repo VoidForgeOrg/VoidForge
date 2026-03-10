@@ -8,4 +8,6 @@ public sealed record PlanetResponse(
     long IronOrePool,
     int BuildingSlotCount,
     long IronOreStorageCapacity,
-    long IronIngotStorageCapacity);
+    long IronIngotStorageCapacity,
+    long IronOreStored,
+    long IronIngotStored);
