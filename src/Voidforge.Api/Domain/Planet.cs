@@ -12,6 +12,8 @@ public sealed class Planet
     public int BuildingSlotCount { get; set; }
     public long IronOreStorageCapacity { get; set; }
     public long IronIngotStorageCapacity { get; set; }
+    public long IronOreStored { get; set; }
+    public long IronIngotStored { get; set; }
 
     public void Apply(PlanetCreated @event)
     {
@@ -21,5 +23,12 @@ public sealed class Planet
         BuildingSlotCount = @event.BuildingSlotCount;
         IronOreStorageCapacity = @event.IronOreStorageCapacity;
         IronIngotStorageCapacity = @event.IronIngotStorageCapacity;
+    }
+
+    public void Apply(PlanetColonized @event)
+    {
+        OwnerId = @event.OwnerId;
+        IronOreStored = @event.IronOreStored;
+        IronIngotStored = @event.IronIngotStored;
     }
 }

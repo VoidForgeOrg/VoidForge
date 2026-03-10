@@ -25,6 +25,8 @@ public static class PlanetEndpoints
             planet.IronOrePool,
             planet.BuildingSlotCount,
             planet.IronOreStorageCapacity,
-            planet.IronIngotStorageCapacity));
+            planet.IronIngotStorageCapacity,
+            planet.IronOreStored,
+            planet.IronIngotStored));
     }
 }
