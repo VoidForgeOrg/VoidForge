@@ -56,3 +56,10 @@ dockerfiles/.env
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
 TestResult.xml
+
+# Frontend
+frontend/app/node_modules/
+frontend/app/dist/
+
+# Superpowers local artifacts
+.superpowers/
