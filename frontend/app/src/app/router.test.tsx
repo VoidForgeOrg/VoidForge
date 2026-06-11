@@ -8,7 +8,14 @@ describe('router', () => {
       '/',
       '/login',
       '/app',
+      '/app/universe',
+      '/app/planets',
       '/app/planets/$planetId',
+      '/app/buildings',
+      '/app/shipyards',
+      '/app/fleets',
+      '/app/leaderboard',
+      '/app/api-debug',
     ]);
   });
 

@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach } from 'vitest';
 
 function createMemoryStorage(): Storage {
   const entries = new Map<string, string>();
@@ -35,4 +37,8 @@ Object.defineProperty(window, 'localStorage', {
 Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: storage,
+});
+
+afterEach(() => {
+  cleanup();
 });

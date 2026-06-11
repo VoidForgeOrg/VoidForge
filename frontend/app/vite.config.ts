@@ -20,6 +20,16 @@ export default defineConfig({
       },
     },
     include: ['src/**/*.test.{ts,tsx}'],
+    server: {
+      deps: {
+        inline: [
+          '@mui/material',
+          '@mui/system',
+          '@mui/utils',
+          'react-transition-group',
+        ],
+      },
+    },
     setupFiles: ['src/test/setup.ts'],
   },
 });

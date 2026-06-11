@@ -1,10 +1,13 @@
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Container from '@mui/material/Container';
+import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import { Link } from '@tanstack/react-router';
+import { Link as RouterLink } from '@tanstack/react-router';
 import { type SyntheticEvent, useState } from 'react';
 
 import { useSessionStore } from '../features/auth/sessionStore';
@@ -58,10 +61,12 @@ export function LoginPage() {
               p: 2,
             }}
           >
-            API key is stored locally for this browser.
-            <Box component="span" sx={{ ml: 2 }}>
-              <Link to="/app">Open app</Link>
-            </Box>
+            <Typography variant="body2">
+              API key is stored locally for this browser.{' '}
+              <MuiLink component={RouterLink} to="/app">
+                Open app
+              </MuiLink>
+            </Typography>
           </Box>
         ) : null}
 
@@ -72,42 +77,19 @@ export function LoginPage() {
                 <Typography component="h2" variant="h6">
                   Existing player
                 </Typography>
-                <Typography component="label" htmlFor="api-key" variant="body2">
-                  API key
-                </Typography>
-                <Box
+                <TextField
                   id="api-key"
-                  component="input"
-                  aria-label="API key"
+                  label="API key"
                   value={apiKeyInput}
                   onChange={(event) => {
                     setApiKeyInput(event.target.value);
                   }}
                   placeholder="vf_..."
-                  sx={{
-                    bgcolor: 'background.default',
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    color: 'text.primary',
-                    p: 1.5,
-                  }}
+                  fullWidth
                 />
-                <Box
-                  component="button"
-                  type="submit"
-                  sx={{
-                    bgcolor: 'primary.main',
-                    border: 0,
-                    borderRadius: 1,
-                    color: 'primary.contrastText',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    p: 1.5,
-                  }}
-                >
+                <Button type="submit" variant="contained" size="large">
                   Save API key
-                </Box>
+                </Button>
               </Stack>
             </Box>
           </CardContent>
@@ -120,49 +102,23 @@ export function LoginPage() {
                 <Typography component="h2" variant="h6">
                   New player
                 </Typography>
-                <Typography
-                  component="label"
-                  htmlFor="player-name"
-                  variant="body2"
-                >
-                  Player name
-                </Typography>
-                <Box
+                <TextField
                   id="player-name"
-                  component="input"
-                  aria-label="Player name"
+                  label="Player name"
                   value={playerName}
                   onChange={(event) => {
                     setPlayerName(event.target.value);
                   }}
-                  sx={{
-                    bgcolor: 'background.default',
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    color: 'text.primary',
-                    p: 1.5,
-                  }}
+                  fullWidth
                 />
-                <Box
-                  component="button"
+                <Button
                   type="submit"
                   disabled={registerPlayer.isPending}
-                  sx={{
-                    bgcolor: 'transparent',
-                    border: 1,
-                    borderColor: 'primary.main',
-                    borderRadius: 1,
-                    color: 'primary.main',
-                    cursor: registerPlayer.isPending
-                      ? 'not-allowed'
-                      : 'pointer',
-                    fontWeight: 700,
-                    p: 1.5,
-                  }}
+                  variant="outlined"
+                  size="large"
                 >
                   Register player
-                </Box>
+                </Button>
                 {registerPlayer.data !== undefined ? (
                   <Box
                     role="status"
