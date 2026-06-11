@@ -63,3 +63,4 @@ frontend/app/dist/
 
 # Superpowers local artifacts
 .superpowers/
+docs/superpowers/
