@@ -39,6 +39,11 @@ Object.defineProperty(globalThis, 'localStorage', {
   value: storage,
 });
 
+Object.defineProperty(window, 'scrollTo', {
+  configurable: true,
+  value: () => undefined,
+});
+
 afterEach(() => {
   cleanup();
 });

@@ -10,6 +10,7 @@ import Typography from '@mui/material/Typography';
 import { Link as RouterLink } from '@tanstack/react-router';
 import { type SyntheticEvent, useState } from 'react';
 
+import { routePath } from '../app/routePaths';
 import { useSessionStore } from '../features/auth/sessionStore';
 import { useRegisterPlayer } from '../shared/api/hooks';
 
@@ -63,7 +64,7 @@ export function LoginPage() {
           >
             <Typography variant="body2">
               API key is stored locally for this browser.{' '}
-              <MuiLink component={RouterLink} to="/app">
+              <MuiLink component={RouterLink} to={routePath.app.empire}>
                 Open app
               </MuiLink>
             </Typography>

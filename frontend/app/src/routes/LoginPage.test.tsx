@@ -1,22 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { AppProviders } from '../app/AppProviders';
-import { useSessionStore } from '../features/auth/sessionStore';
+import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
 import { LoginPage } from './LoginPage';
 
 describe('LoginPage', () => {
   beforeEach(() => {
-    window.localStorage.clear();
-    useSessionStore.setState({ apiKey: null });
+    resetFrontendTestState();
   });
 
   it('renders API key and registration controls', () => {
-    render(
-      <AppProviders>
-        <LoginPage />
-      </AppProviders>,
-    );
+    renderWithAppProviders(<LoginPage />);
 
     expect(screen.getByLabelText('API key')).toBeInTheDocument();
     expect(screen.getByLabelText('Player name')).toBeInTheDocument();

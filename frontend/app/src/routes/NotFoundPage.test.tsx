@@ -1,43 +1,28 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { RouterProvider } from '@tanstack/react-router';
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { AppProviders } from '../app/AppProviders';
 import { createAppRouter } from '../app/router';
+import { routePath } from '../app/routePaths';
+import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
 
 describe('NotFoundPage', () => {
-  beforeAll(() => {
-    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
-  });
-
-  afterAll(() => {
-    vi.restoreAllMocks();
+  beforeEach(() => {
+    resetFrontendTestState();
   });
 
   afterEach(() => {
-    window.history.pushState({}, '', '/');
+    window.history.pushState({}, '', routePath.home);
   });
 
   it('offers a return action to the app', async () => {
     window.history.pushState({}, '', '/missing-route');
     const router = createAppRouter();
 
-    render(
-      <AppProviders>
-        <RouterProvider router={router} />
-      </AppProviders>,
-    );
+    renderWithAppProviders(<RouterProvider router={router} />);
 
     expect(
       await screen.findByRole('link', { name: 'Return to empire' }),
-    ).toHaveAttribute('href', '/app');
+    ).toHaveAttribute('href', routePath.app.empire);
   });
 });

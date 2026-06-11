@@ -4,6 +4,8 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { Link as RouterLink } from '@tanstack/react-router';
 
+import { routePath } from '../app/routePaths';
+
 export function NotFoundPage() {
   return (
     <Container maxWidth="sm" sx={{ py: 8 }}>
@@ -16,7 +18,7 @@ export function NotFoundPage() {
         </Typography>
         <Button
           component={RouterLink}
-          to="/app"
+          to={routePath.app.empire}
           variant="contained"
           sx={{ alignSelf: 'flex-start' }}
         >
