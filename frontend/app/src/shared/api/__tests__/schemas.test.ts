@@ -5,7 +5,7 @@ import {
   playerInfoSchema,
   registerPlayerResponseSchema,
   solarSystemSchema,
-} from './schemas';
+} from '../schemas';
 
 describe('API schemas', () => {
   it('parses a registration response', () => {

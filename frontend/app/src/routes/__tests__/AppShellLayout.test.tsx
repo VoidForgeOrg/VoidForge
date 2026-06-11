@@ -10,11 +10,14 @@ import {
 import { type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createAppRouter } from '../app/router';
-import { routePath } from '../app/routePaths';
-import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
-import { AppShellLayout } from './AppShellLayout';
-import { getSectionTitle, navigationItems } from './navigation';
+import { createAppRouter } from '../../app/router';
+import { routePath } from '../../app/routePaths';
+import {
+  renderWithAppProviders,
+  resetFrontendTestState,
+} from '../../test/render';
+import { AppShellLayout } from '../AppShellLayout';
+import { getSectionTitle, navigationItems } from '../navigation';
 
 function renderWithTestRouter(ui: ReactNode) {
   const rootRoute = createRootRoute({ component: Outlet });

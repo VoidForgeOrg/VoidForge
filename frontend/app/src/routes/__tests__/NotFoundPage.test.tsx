@@ -2,9 +2,12 @@ import { screen } from '@testing-library/react';
 import { RouterProvider } from '@tanstack/react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createAppRouter } from '../app/router';
-import { routePath } from '../app/routePaths';
-import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
+import { createAppRouter } from '../../app/router';
+import { routePath } from '../../app/routePaths';
+import {
+  renderWithAppProviders,
+  resetFrontendTestState,
+} from '../../test/render';
 
 describe('NotFoundPage', () => {
   beforeEach(() => {

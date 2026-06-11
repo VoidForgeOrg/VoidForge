@@ -1,8 +1,11 @@
 import { screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
-import { EmpireOverviewPage } from './EmpireOverviewPage';
+import {
+  renderWithAppProviders,
+  resetFrontendTestState,
+} from '../../test/render';
+import { EmpireOverviewPage } from '../EmpireOverviewPage';
 
 describe('EmpireOverviewPage', () => {
   beforeEach(() => {

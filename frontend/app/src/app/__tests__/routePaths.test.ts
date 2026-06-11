@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_BASE_PATH, appPath, routePath } from './routePaths';
+import { APP_BASE_PATH, appPath, routePath } from '../routePaths';
 
 describe('routePaths', () => {
   it('defines the authenticated app base once', () => {

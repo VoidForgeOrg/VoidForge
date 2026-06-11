@@ -2,9 +2,12 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { useSessionStore } from '../features/auth/sessionStore';
-import { renderWithAppProviders, resetFrontendTestState } from '../test/render';
-import { ApiDebugPage } from './ApiDebugPage';
+import { useSessionStore } from '../../features/auth/sessionStore';
+import {
+  renderWithAppProviders,
+  resetFrontendTestState,
+} from '../../test/render';
+import { ApiDebugPage } from '../ApiDebugPage';
 
 describe('ApiDebugPage', () => {
   beforeEach(() => {

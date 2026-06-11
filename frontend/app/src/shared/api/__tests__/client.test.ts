@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { playerInfoSchema } from './schemas';
-import { ApiError, createApiClient } from './client';
+import { ApiError, createApiClient } from '../client';
+import { playerInfoSchema } from '../schemas';
 
 describe('API client', () => {
   it('sends the API key header and parses successful responses', async () => {
