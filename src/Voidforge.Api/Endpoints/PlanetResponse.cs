@@ -7,7 +7,5 @@ public sealed record PlanetResponse(
     Guid? OwnerId,
     long IronOrePool,
     int BuildingSlotCount,
-    long IronOreStorageCapacity,
-    long IronIngotStorageCapacity,
-    long IronOreStored,
-    long IronIngotStored);
+    ResourcePoolResponse IronOre,
+    ResourcePoolResponse IronIngot);

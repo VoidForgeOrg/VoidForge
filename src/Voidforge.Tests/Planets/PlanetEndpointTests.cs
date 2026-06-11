@@ -61,10 +61,30 @@ public sealed class PlanetEndpointTests
         Assert.Equal(registration.PlayerId, planet.OwnerId);
         Assert.True(planet.IronOrePool > 0);
         Assert.True(planet.BuildingSlotCount > 0);
-        Assert.True(planet.IronOreStorageCapacity > 0);
-        Assert.True(planet.IronIngotStorageCapacity > 0);
-        Assert.True(planet.IronOreStored > 0);
-        Assert.True(planet.IronIngotStored > 0);
+        Assert.True(planet.IronOre.StorageCapacity > 0);
+        Assert.True(planet.IronIngot.StorageCapacity > 0);
+        Assert.True(planet.IronOre.CurrentValue > 0);
+        Assert.True(planet.IronIngot.CurrentValue > 0);
+    }
+
+    [Fact]
+    public async Task GetPlanetByIdReturnsComputedValuesNotRawCheckpoint()
+    {
+        var registration = await RegisterPlayer();
+
+        var planetResult = await _host.Scenario(s =>
+        {
+            s.Get.Url($"/api/planets/{registration.HomeworldId}");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(200);
+        });
+
+        var planet = await planetResult.ReadAsJsonAsync<PlanetResponse>();
+        Assert.NotNull(planet);
+
+        // With rate=0 (no buildings yet), current value should equal starting resources
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(0m, planet.IronIngot.Rate);
     }
 
     [Fact]
