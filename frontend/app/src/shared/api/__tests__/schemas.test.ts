@@ -49,12 +49,20 @@ describe('API schemas', () => {
       ownerId: null,
       ironOrePool: 50000,
       buildingSlotCount: 6,
-      ironOreStorageCapacity: 10000,
-      ironIngotStorageCapacity: 5000,
-      ironOreStored: 500,
-      ironIngotStored: 100,
+      ironOre: {
+        currentValue: 500,
+        rate: 12.5,
+        storageCapacity: 10000,
+      },
+      ironIngot: {
+        currentValue: 100,
+        rate: -2.5,
+        storageCapacity: 5000,
+      },
     });
 
     expect(result.ownerId).toBeNull();
+    expect(result.ironOre.currentValue).toBe(500);
+    expect(result.ironIngot.storageCapacity).toBe(5000);
   });
 });

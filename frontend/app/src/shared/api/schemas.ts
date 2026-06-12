@@ -29,6 +29,12 @@ export const solarSystemSchema = z.object({
 
 export const solarSystemsSchema = z.array(solarSystemSchema);
 
+export const resourcePoolSchema = z.object({
+  currentValue: z.number().nonnegative(),
+  rate: z.number(),
+  storageCapacity: z.number().nonnegative(),
+});
+
 export const planetSchema = z.object({
   id: guidSchema,
   name: z.string().min(1),
@@ -36,10 +42,8 @@ export const planetSchema = z.object({
   ownerId: guidSchema.nullable(),
   ironOrePool: z.number().int().nonnegative(),
   buildingSlotCount: z.number().int().nonnegative(),
-  ironOreStorageCapacity: z.number().int().nonnegative(),
-  ironIngotStorageCapacity: z.number().int().nonnegative(),
-  ironOreStored: z.number().int().nonnegative(),
-  ironIngotStored: z.number().int().nonnegative(),
+  ironOre: resourcePoolSchema,
+  ironIngot: resourcePoolSchema,
 });
 
 export type RegisterPlayerRequest = z.infer<typeof registerPlayerRequestSchema>;
@@ -48,4 +52,5 @@ export type RegisterPlayerResponse = z.infer<
 >;
 export type PlayerInfo = z.infer<typeof playerInfoSchema>;
 export type SolarSystem = z.infer<typeof solarSystemSchema>;
+export type ResourcePool = z.infer<typeof resourcePoolSchema>;
 export type Planet = z.infer<typeof planetSchema>;

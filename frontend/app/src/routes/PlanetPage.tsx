@@ -57,9 +57,13 @@ export function PlanetPage({ planetId }: PlanetPageProps) {
           </Typography>
           {planet.data !== undefined ? (
             <Stack spacing={1} sx={{ mt: 2 }}>
-              <Typography>Iron Ore: {planet.data.ironOreStored}</Typography>
               <Typography>
-                Iron Ingots: {planet.data.ironIngotStored}
+                Iron Ore: {planet.data.ironOre.currentValue} /{' '}
+                {planet.data.ironOre.storageCapacity}
+              </Typography>
+              <Typography>
+                Iron Ingots: {planet.data.ironIngot.currentValue} /{' '}
+                {planet.data.ironIngot.storageCapacity}
               </Typography>
               <Typography>
                 Building slots: {planet.data.buildingSlotCount}

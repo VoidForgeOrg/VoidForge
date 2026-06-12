@@ -135,7 +135,15 @@ export function LoginPage() {
                       p: 2,
                     }}
                   >
-                    Registered. Homeworld ID: {registerPlayer.data.homeworldId}
+                    <Stack spacing={1}>
+                      <Typography>
+                        Registered. Homeworld ID:{' '}
+                        {registerPlayer.data.homeworldId}
+                      </Typography>
+                      <Typography sx={{ overflowWrap: 'anywhere' }}>
+                        API key: {registerPlayer.data.apiKey}
+                      </Typography>
+                    </Stack>
                   </Box>
                 ) : null}
                 {registerPlayer.error !== null ? (

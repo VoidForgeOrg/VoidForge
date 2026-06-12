@@ -85,4 +85,4 @@ Run frontend commands from `frontend/app/`:
 - `bun run format:check` - check Prettier formatting
 - `bun run test` - run Vitest
 
-The frontend currently uses `VITE_API_BASE_URL` when set, otherwise it calls `http://localhost:5000`.
+The frontend uses `VITE_API_BASE_URL` when set, otherwise it calls same-origin `/api` paths. The Vite dev server proxies `/api` to `http://localhost:5000`.

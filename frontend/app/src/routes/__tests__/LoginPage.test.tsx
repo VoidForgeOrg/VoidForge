@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-router';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSessionStore } from '../../features/auth/sessionStore';
 import { resetFrontendTestState } from '../../test/render';
@@ -42,6 +42,10 @@ function renderLoginPage(queryClient = new QueryClient()) {
 describe('LoginPage', () => {
   beforeEach(() => {
     resetFrontendTestState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders API key and registration controls', async () => {
@@ -85,5 +89,31 @@ describe('LoginPage', () => {
 
     expect(useSessionStore.getState().apiKey).toBe('vf_new_key');
     expect(queryClient.getQueryData(currentPlayerKey)).toBeUndefined();
+  });
+
+  it('shows the generated API key once after registering a player', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            playerId: '018f4c8a-3f10-7cc5-b802-cd2f7ba2b8f4',
+            apiKey: 'vf_generated_key',
+            homeworldId: '018f4c8a-3f10-7cc5-b802-cd2f7ba2b8f5',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+
+    renderLoginPage();
+
+    await user.type(await screen.findByLabelText('Player name'), 'Kedar');
+    await user.click(screen.getByRole('button', { name: 'Register player' }));
+
+    expect(
+      await screen.findByText('API key: vf_generated_key'),
+    ).toBeInTheDocument();
+    expect(useSessionStore.getState().apiKey).toBe('vf_generated_key');
   });
 });
