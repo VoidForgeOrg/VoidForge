@@ -5,7 +5,7 @@ function readDefaultBaseUrl(): string {
 
   return typeof configuredBaseUrl === 'string' && configuredBaseUrl.length > 0
     ? configuredBaseUrl
-    : 'http://localhost:5000';
+    : '';
 }
 
 const defaultBaseUrl = readDefaultBaseUrl();
@@ -65,7 +65,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
-    const response = await fetcher(new URL(path, baseUrl), {
+    const requestInput = baseUrl.length > 0 ? new URL(path, baseUrl) : path;
+    const response = await fetcher(requestInput, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

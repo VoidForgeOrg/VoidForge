@@ -7,17 +7,19 @@ import MuiLink from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link as RouterLink } from '@tanstack/react-router';
 import { type SyntheticEvent, useState } from 'react';
 
 import { routePath } from '../app/routePaths';
 import { useSessionStore } from '../features/auth/sessionStore';
-import { useRegisterPlayer } from '../shared/api/hooks';
+import { queryKeys, useRegisterPlayer } from '../shared/api/hooks';
 
 export function LoginPage() {
   const apiKey = useSessionStore((state) => state.apiKey);
   const setApiKey = useSessionStore((state) => state.setApiKey);
-  const [apiKeyInput, setApiKeyInput] = useState(apiKey ?? '');
+  const queryClient = useQueryClient();
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [playerName, setPlayerName] = useState('');
   const registerPlayer = useRegisterPlayer();
 
@@ -26,6 +28,7 @@ export function LoginPage() {
 
     const trimmedApiKey = apiKeyInput.trim();
     if (trimmedApiKey.length > 0) {
+      queryClient.removeQueries({ queryKey: queryKeys.currentPlayerRoot });
       setApiKey(trimmedApiKey);
     }
   }
@@ -82,6 +85,8 @@ export function LoginPage() {
                   id="api-key"
                   label="API key"
                   value={apiKeyInput}
+                  type="password"
+                  autoComplete="off"
                   onChange={(event) => {
                     setApiKeyInput(event.target.value);
                   }}

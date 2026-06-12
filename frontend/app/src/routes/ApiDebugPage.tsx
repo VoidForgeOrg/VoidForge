@@ -3,13 +3,21 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { useSessionStore } from '../features/auth/sessionStore';
+import { queryKeys } from '../shared/api/hooks';
 
 export function ApiDebugPage() {
   const apiKey = useSessionStore((state) => state.apiKey);
   const clearApiKey = useSessionStore((state) => state.clearApiKey);
+  const queryClient = useQueryClient();
   const apiConnected = apiKey !== null;
+
+  function clearSession() {
+    queryClient.removeQueries({ queryKey: queryKeys.currentPlayerRoot });
+    clearApiKey();
+  }
 
   return (
     <Stack spacing={3}>
@@ -44,7 +52,7 @@ export function ApiDebugPage() {
                 type="button"
                 variant="outlined"
                 color="warning"
-                onClick={clearApiKey}
+                onClick={clearSession}
                 sx={{ alignSelf: 'flex-start' }}
               >
                 Clear API key
