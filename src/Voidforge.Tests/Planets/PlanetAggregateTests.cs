@@ -24,8 +24,12 @@ public sealed class PlanetAggregateTests
         Assert.Equal(solarSystemId, planet.SolarSystemId);
         Assert.Equal(50000, planet.IronOrePool);
         Assert.Equal(6, planet.BuildingSlotCount);
-        Assert.Equal(10000, planet.IronOreStorageCapacity);
-        Assert.Equal(5000, planet.IronIngotStorageCapacity);
+        Assert.Equal(0m, planet.IronOre.CheckpointValue);
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(10000m, planet.IronOre.StorageCapacity);
+        Assert.Equal(0m, planet.IronIngot.CheckpointValue);
+        Assert.Equal(0m, planet.IronIngot.Rate);
+        Assert.Equal(5000m, planet.IronIngot.StorageCapacity);
     }
 
     [Fact]
@@ -47,25 +51,59 @@ public sealed class PlanetAggregateTests
         Assert.Null(planet.OwnerId);
         Assert.Equal(0, planet.IronOrePool);
         Assert.Equal(0, planet.BuildingSlotCount);
-        Assert.Equal(0, planet.IronOreStorageCapacity);
-        Assert.Equal(0, planet.IronIngotStorageCapacity);
-        Assert.Equal(0, planet.IronOreStored);
-        Assert.Equal(0, planet.IronIngotStored);
+        Assert.Equal(0m, planet.IronOre.CheckpointValue);
+        Assert.Equal(0m, planet.IronOre.StorageCapacity);
+        Assert.Equal(0m, planet.IronIngot.CheckpointValue);
+        Assert.Equal(0m, planet.IronIngot.StorageCapacity);
     }
 
     [Fact]
     public void ApplyPlanetColonizedSetsOwnerAndResources()
     {
         var planet = new Planet();
+        var solarSystemId = Guid.NewGuid();
         var ownerId = Guid.NewGuid();
+        var colonizedAt = DateTimeOffset.UtcNow;
+
+        planet.Apply(new PlanetCreated(
+            Name: "Test Planet",
+            SolarSystemId: solarSystemId,
+            IronOrePool: 50000,
+            BuildingSlotCount: 6,
+            IronOreStorageCapacity: 10000,
+            IronIngotStorageCapacity: 5000));
 
         planet.Apply(new PlanetColonized(
             OwnerId: ownerId,
             IronOreStored: 500,
-            IronIngotStored: 100));
+            IronIngotStored: 100,
+            ColonizedAt: colonizedAt));
 
         Assert.Equal(ownerId, planet.OwnerId);
-        Assert.Equal(500, planet.IronOreStored);
-        Assert.Equal(100, planet.IronIngotStored);
+        Assert.Equal(500m, planet.IronOre.CheckpointValue);
+        Assert.Equal(colonizedAt, planet.IronOre.CheckpointTime);
+        Assert.Equal(10000m, planet.IronOre.StorageCapacity);
+        Assert.Equal(100m, planet.IronIngot.CheckpointValue);
+        Assert.Equal(colonizedAt, planet.IronIngot.CheckpointTime);
+        Assert.Equal(5000m, planet.IronIngot.StorageCapacity);
+    }
+
+    [Fact]
+    public void CheckpointAllResourcesUpdatesBaselines()
+    {
+        var planet = new Planet();
+        var colonizedAt = DateTimeOffset.UtcNow;
+
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, colonizedAt));
+
+        // Manually set a rate to verify checkpoint math
+        planet.IronOre = planet.IronOre with { Rate = 10 };
+
+        var checkpointTime = colonizedAt.AddSeconds(5);
+        planet.CheckpointAllResources(checkpointTime);
+
+        Assert.Equal(550m, planet.IronOre.CheckpointValue);
+        Assert.Equal(checkpointTime, planet.IronOre.CheckpointTime);
     }
 }

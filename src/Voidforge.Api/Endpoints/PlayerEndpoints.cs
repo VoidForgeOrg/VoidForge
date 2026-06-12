@@ -53,7 +53,7 @@ public static class PlayerEndpoints
         session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, DateTimeOffset.UtcNow));
         // Race: two concurrent registrations can colonize the same planet. Fix with optimistic
         // concurrency (expected version) on Append. Tracked in GitHub issue.
-        session.Events.Append(homeworldId, new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots));
+        session.Events.Append(homeworldId, new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots, DateTimeOffset.UtcNow));
         session.Store(new ApiKey
         {
             Id = Guid.NewGuid(),

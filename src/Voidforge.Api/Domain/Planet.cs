@@ -10,10 +10,8 @@ public sealed class Planet
     public Guid? OwnerId { get; set; }
     public long IronOrePool { get; set; }
     public int BuildingSlotCount { get; set; }
-    public long IronOreStorageCapacity { get; set; }
-    public long IronIngotStorageCapacity { get; set; }
-    public long IronOreStored { get; set; }
-    public long IronIngotStored { get; set; }
+    public ResourcePool IronOre { get; set; } = new(0, 0, 0, default);
+    public ResourcePool IronIngot { get; set; } = new(0, 0, 0, default);
 
     public void Apply(PlanetCreated @event)
     {
@@ -21,14 +19,20 @@ public sealed class Planet
         SolarSystemId = @event.SolarSystemId;
         IronOrePool = @event.IronOrePool;
         BuildingSlotCount = @event.BuildingSlotCount;
-        IronOreStorageCapacity = @event.IronOreStorageCapacity;
-        IronIngotStorageCapacity = @event.IronIngotStorageCapacity;
+        IronOre = new ResourcePool(0, 0, @event.IronOreStorageCapacity, default);
+        IronIngot = new ResourcePool(0, 0, @event.IronIngotStorageCapacity, default);
     }
 
     public void Apply(PlanetColonized @event)
     {
         OwnerId = @event.OwnerId;
-        IronOreStored = @event.IronOreStored;
-        IronIngotStored = @event.IronIngotStored;
+        IronOre = IronOre with { CheckpointValue = @event.IronOreStored, CheckpointTime = @event.ColonizedAt };
+        IronIngot = IronIngot with { CheckpointValue = @event.IronIngotStored, CheckpointTime = @event.ColonizedAt };
+    }
+
+    public void CheckpointAllResources(DateTimeOffset now)
+    {
+        IronOre = IronOre.Checkpoint(now);
+        IronIngot = IronIngot.Checkpoint(now);
     }
 }
