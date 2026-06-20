@@ -22,6 +22,21 @@ src/
     ├── Players/                    # Player registration tests
     ├── AppFixture.cs               # Shared test host (Alba + PostgreSQL)
     └── IntegrationCollection.cs    # xUnit collection for shared fixture
+
+frontend/
+├── epoch-1-scope.md                # Epoch 1 frontend scope inventory
+└── app/                            # Bun + Vite React frontend
+    ├── package.json                # Frontend scripts and dependencies
+    ├── bun.lock                    # Bun lockfile
+    ├── vite.config.ts              # Vite + Vitest configuration
+    ├── eslint.config.js            # ESLint flat config
+    ├── prettier.config.js          # Prettier config
+    └── src/
+        ├── app/                    # Providers, theme, router
+        ├── features/               # Feature-local state and UI modules
+        ├── routes/                 # Route components
+        ├── shared/api/             # API client, Zod schemas, query hooks
+        └── test/                   # Vitest setup
 ```
 
 ## Folder Conventions
@@ -34,6 +49,10 @@ src/
 | `Endpoints/` | Wolverine HTTP endpoint classes + request/response DTOs | `PlayerEndpoints.cs`, `RegisterPlayerRequest.cs` |
 | `Auth/` | Authentication handler, options, defaults | `ApiKeyAuthenticationHandler.cs` |
 | `WorldGeneration/` | World seeding hosted service + configuration | `WorldSeeder.cs`, `WorldGenOptions.cs` |
+| `frontend/app/src/app/` | React application providers, theme, and TanStack Router setup | `AppProviders.tsx`, `router.tsx` |
+| `frontend/app/src/routes/` | Page-level route components | `LoginPage.tsx`, `EmpireOverviewPage.tsx` |
+| `frontend/app/src/shared/api/` | Fetch client, Zod response schemas, and TanStack Query hooks | `client.ts`, `schemas.ts`, `hooks.ts` |
+| `frontend/app/src/features/` | Feature-local frontend state and UI modules | `auth/sessionStore.ts` |
 
 **Rule**: One public type per file (enforced by Meziantou.Analyzer MA0048).
 
@@ -54,3 +73,16 @@ src/
 - Test DB: `voidforge_test` on localhost PostgreSQL
 - Each test class receives the fixture via constructor injection
 - Test names describe behavior: `RegisterReturnsPlayerIdAndApiKey`, `MeWithoutAuthReturns401`
+
+## Frontend Commands
+
+Run frontend commands from `frontend/app/`:
+
+- `bun install` - restore frontend dependencies
+- `bun run dev` - start Vite dev server
+- `bun run build` - run TypeScript typecheck and production build
+- `bun run lint` - run ESLint
+- `bun run format:check` - check Prettier formatting
+- `bun run test` - run Vitest
+
+The frontend uses `VITE_API_BASE_URL` when set, otherwise it calls same-origin `/api` paths. The Vite dev server proxies `/api` to `http://localhost:5000`.
