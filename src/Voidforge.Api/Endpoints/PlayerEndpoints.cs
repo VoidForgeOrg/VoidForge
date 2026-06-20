@@ -50,10 +50,19 @@ public static class PlayerEndpoints
         var hashedKey = ApiKeyAuthenticationHandler.HashKey(rawKey);
         var opts = worldGenOptions.Value;
 
-        session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, DateTimeOffset.UtcNow));
+        var now = DateTimeOffset.UtcNow;
+
+        session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, now));
         // Race: two concurrent registrations can colonize the same planet. Fix with optimistic
         // concurrency (expected version) on Append. Tracked in GitHub issue.
-        session.Events.Append(homeworldId, new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots, DateTimeOffset.UtcNow));
+        session.Events.Append(homeworldId,
+            new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots, now),
+            // Starting buildings: 1 Drill (sets ore extraction rate via BuildingSpecs),
+            // 1 Refinery, 1 Generator. Refinery and Generator are inert in Phase 2.
+            // Placed at the colonization instant.
+            new BuildingPlaced(BuildingType.Drill, now),
+            new BuildingPlaced(BuildingType.Refinery, now),
+            new BuildingPlaced(BuildingType.Generator, now));
         session.Store(new ApiKey
         {
             Id = Guid.NewGuid(),

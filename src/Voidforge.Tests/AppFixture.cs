@@ -19,6 +19,10 @@ public sealed class AppFixture : IAsyncLifetime
         // which triggers a service provider disposal race with RunJasperFxCommands in .NET 9.
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", connStr);
 
+        // Each registration colonizes one planet. Seed a large world so the suite never
+        // exhausts uncolonized planets (which would surface as 503s across unrelated tests).
+        Environment.SetEnvironmentVariable("WorldGeneration__SolarSystemCount", "40");
+
         // Safety check: refuse to drop schema on a non-test database.
         var builder = new NpgsqlConnectionStringBuilder(connStr);
         if (builder.Database is not { } db || !db.Contains("test", StringComparison.OrdinalIgnoreCase))

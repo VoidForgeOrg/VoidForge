@@ -1,5 +1,6 @@
 using Alba;
 using Voidforge.Api.Auth;
+using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
 using Xunit;
 
@@ -82,9 +83,32 @@ public sealed class PlanetEndpointTests
         var planet = await planetResult.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
 
-        // With rate=0 (no buildings yet), current value should equal starting resources
-        Assert.Equal(0m, planet.IronOre.Rate);
+        // The homeworld starts with a Drill, so Iron Ore extracts at a positive rate.
+        // The Refinery is inert in Phase 2, so Iron Ingots stay flat (rate 0).
+        Assert.True(planet.IronOre.Rate > 0);
         Assert.Equal(0m, planet.IronIngot.Rate);
+    }
+
+    [Fact]
+    public async Task GetPlanetByIdReturnsStartingBuildings()
+    {
+        var registration = await RegisterPlayer();
+
+        var planetResult = await _host.Scenario(s =>
+        {
+            s.Get.Url($"/api/planets/{registration.HomeworldId}");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(200);
+        });
+
+        var planet = await planetResult.ReadAsJsonAsync<PlanetResponse>();
+        Assert.NotNull(planet);
+
+        // Homeworld starts with 1 Drill, 1 Refinery, 1 Generator (issue #10).
+        Assert.Equal(3, planet.Buildings.Count);
+        Assert.Contains(planet.Buildings, b => b.Type == BuildingType.Drill);
+        Assert.Contains(planet.Buildings, b => b.Type == BuildingType.Refinery);
+        Assert.Contains(planet.Buildings, b => b.Type == BuildingType.Generator);
     }
 
     [Fact]

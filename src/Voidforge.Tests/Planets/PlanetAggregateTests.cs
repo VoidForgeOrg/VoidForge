@@ -89,6 +89,100 @@ public sealed class PlanetAggregateTests
     }
 
     [Fact]
+    public void ApplyBuildingPlacedDrillSetsIronOreRate()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+
+        Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
+        Assert.Single(planet.Buildings);
+        Assert.Equal(BuildingType.Drill, planet.Buildings[0].Type);
+        Assert.Equal(BuildingStatus.Operational, planet.Buildings[0].Status);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedMultipleDrillsAreAdditive()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+
+        Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill) * 2, planet.IronOre.Rate);
+        Assert.Equal(2, planet.Buildings.Count);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedDrillCheckpointsAccumulatedOreBeforeRateChange()
+    {
+        var colonizedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, colonizedAt));
+
+        var rate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill);
+
+        // First drill runs for 10s, accumulating rate*10 ore. A second drill is then placed.
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, colonizedAt));
+        var secondPlacedAt = colonizedAt.AddSeconds(10);
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, secondPlacedAt));
+
+        // 500 + rate * 10s locked in at the rate change.
+        Assert.Equal(500m + (rate * 10m), planet.IronOre.CheckpointValue);
+        Assert.Equal(secondPlacedAt, planet.IronOre.CheckpointTime);
+        Assert.Equal(rate * 2, planet.IronOre.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedNonDrillDoesNotChangeIronOreRate()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(2, planet.Buildings.Count);
+    }
+
+    [Fact]
+    public void PlaceBuildingReturnsEventWhenSlotAvailable()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+
+        var @event = planet.PlaceBuilding(BuildingType.Drill, placedAt);
+
+        Assert.Equal(BuildingType.Drill, @event.BuildingType);
+        Assert.Equal(placedAt, @event.PlacedAt);
+        // PlaceBuilding validates and produces the event; it does not mutate until applied.
+        Assert.Empty(planet.Buildings);
+    }
+
+    [Fact]
+    public void PlaceBuildingThrowsWhenSlotsFull()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+
+        Assert.Throws<NoFreeSlotsException>(() => planet.PlaceBuilding(BuildingType.Drill, placedAt));
+    }
+
+    [Fact]
     public void CheckpointAllResourcesUpdatesBaselines()
     {
         var planet = new Planet();

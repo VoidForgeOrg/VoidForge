@@ -17,22 +17,6 @@ public static class PlanetEndpoints
             return TypedResults.NotFound();
         }
 
-        var now = DateTimeOffset.UtcNow;
-
-        return TypedResults.Ok(new PlanetResponse(
-            planet.Id,
-            planet.Name,
-            planet.SolarSystemId,
-            planet.OwnerId,
-            planet.IronOrePool,
-            planet.BuildingSlotCount,
-            new ResourcePoolResponse(
-                planet.IronOre.GetCurrentValue(now),
-                planet.IronOre.Rate,
-                planet.IronOre.StorageCapacity),
-            new ResourcePoolResponse(
-                planet.IronIngot.GetCurrentValue(now),
-                planet.IronIngot.Rate,
-                planet.IronIngot.StorageCapacity)));
+        return TypedResults.Ok(PlanetResponse.From(planet, DateTimeOffset.UtcNow));
     }
 }
