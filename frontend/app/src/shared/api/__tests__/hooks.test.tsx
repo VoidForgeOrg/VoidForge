@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSessionStore } from '../../../features/auth/sessionStore';
 import { resetFrontendTestState } from '../../../test/render';
-import { useCurrentPlayer } from '../hooks';
+import { queryKeys, useCurrentPlayer } from '../hooks';
 
 const oldPlayer = {
   id: '018f4c8a-3f10-7cc5-b802-cd2f7ba2b8f4',
@@ -48,7 +48,8 @@ describe('API query hooks', () => {
 
   it('does not expose cached current-player data after the API key is cleared', () => {
     const queryClient = new QueryClient();
-    queryClient.setQueryData(['current-player'], oldPlayer);
+    queryClient.setQueryData(queryKeys.currentPlayer('vf_old_key'), oldPlayer);
+    // apiKey is null after reset, so the query is disabled and must not surface stale data.
 
     renderWithQueryClient(<CurrentPlayerName />, queryClient);
 
@@ -58,11 +59,12 @@ describe('API query hooks', () => {
 
   it('does not reuse cached current-player data after switching API keys', () => {
     const queryClient = new QueryClient();
-    queryClient.setQueryData(['current-player'], oldPlayer);
+    queryClient.setQueryData(queryKeys.currentPlayer('vf_old_key'), oldPlayer);
     useSessionStore.getState().setApiKey('vf_new_key');
 
     renderWithQueryClient(<CurrentPlayerName />, queryClient);
 
+    // The new key reads queryKeys.currentPlayer('vf_new_key'), never the old key's cache.
     expect(screen.queryByText('Old Commander')).not.toBeInTheDocument();
   });
 });

@@ -1,19 +1,16 @@
+import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
 
 import { useSessionStore } from '../features/auth/sessionStore';
+import { formatError } from '../shared/api/errors';
 import { usePlanet } from '../shared/api/hooks';
 
 interface PlanetPageProps {
   planetId: string;
-}
-
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown API error';
 }
 
 export function PlanetPage({ planetId }: PlanetPageProps) {

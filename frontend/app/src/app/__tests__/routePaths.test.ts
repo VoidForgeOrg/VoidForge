@@ -14,7 +14,6 @@ describe('routePaths', () => {
     expect(routePath.login).toBe('/login');
     expect(routePath.app.empire).toBe('/app');
     expect(routePath.app.planets).toBe('/app/planets');
-    expect(routePath.app.planetTemplate).toBe('/app/planets/$planetId');
   });
 
   it('builds planet detail paths with the supplied planet id', () => {

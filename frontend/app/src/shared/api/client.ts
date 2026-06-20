@@ -65,7 +65,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
-    const requestInput = baseUrl.length > 0 ? new URL(path, baseUrl) : path;
+    const requestInput =
+      baseUrl.length > 0 ? `${baseUrl.replace(/\/$/, '')}${path}` : path;
     const response = await fetcher(requestInput, {
       method,
       headers,

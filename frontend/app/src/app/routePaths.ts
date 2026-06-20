@@ -13,7 +13,6 @@ export const routePath = {
     empire: appPath(''),
     universe: appPath('/universe'),
     planets: appPath('/planets'),
-    planetTemplate: appPath('/planets/$planetId'),
     planet: (planetId: string) => appPath(`/planets/${planetId}`),
     buildings: appPath('/buildings'),
     shipyards: appPath('/shipyards'),

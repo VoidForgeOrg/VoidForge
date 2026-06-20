@@ -7,11 +7,8 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
 import { useSessionStore } from '../features/auth/sessionStore';
+import { formatError } from '../shared/api/errors';
 import { useCurrentPlayer, useSolarSystems } from '../shared/api/hooks';
-
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown API error';
-}
 
 export function EmpireOverviewPage() {
   const apiKey = useSessionStore((state) => state.apiKey);
