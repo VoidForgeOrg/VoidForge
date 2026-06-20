@@ -1,0 +1,356 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Voidforge.Api",
+    "version": "1.0"
+  },
+  "paths": {
+    "/api/ping": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.PingEndpoint"
+        ],
+        "summary": "GET_api_ping",
+        "description": "GET_api_ping",
+        "operationId": "GET_api_ping",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planets/{id}": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.PlanetEndpoints"
+        ],
+        "summary": "GET_api_planets_id",
+        "description": "GET_api_planets_id",
+        "operationId": "GET_api_planets_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanetResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/players/register": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.PlayerEndpoints"
+        ],
+        "summary": "POST_api_players_register",
+        "description": "POST_api_players_register",
+        "operationId": "POST_api_players_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPlayerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterPlayerResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/players/me": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.PlayerEndpoints"
+        ],
+        "summary": "GET_api_players_me",
+        "description": "GET_api_players_me",
+        "operationId": "GET_api_players_me",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerInfoResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/solar-systems": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.SolarSystemEndpoints"
+        ],
+        "summary": "GET_api_solar_systems",
+        "description": "GET_api_solar_systems",
+        "operationId": "GET_api_solar_systems",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SolarSystemResponse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PlanetResponse": {
+        "required": [
+          "buildingSlotCount",
+          "id",
+          "ironIngot",
+          "ironOre",
+          "ironOrePool",
+          "name",
+          "solarSystemId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "solarSystemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "ironOrePool": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "buildingSlotCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ironOre": {
+            "$ref": "#/components/schemas/ResourcePoolResponse"
+          },
+          "ironIngot": {
+            "$ref": "#/components/schemas/ResourcePoolResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlayerInfoResponse": {
+        "required": [
+          "id",
+          "name",
+          "registeredAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "registeredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegisterPlayerRequest": {
+        "required": [
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegisterPlayerResponse": {
+        "required": [
+          "apiKey",
+          "homeworldId",
+          "playerId"
+        ],
+        "type": "object",
+        "properties": {
+          "playerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "apiKey": {
+            "type": "string"
+          },
+          "homeworldId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResourcePoolResponse": {
+        "required": [
+          "currentValue",
+          "rate",
+          "storageCapacity"
+        ],
+        "type": "object",
+        "properties": {
+          "currentValue": {
+            "type": "number",
+            "format": "double"
+          },
+          "rate": {
+            "type": "number",
+            "format": "double"
+          },
+          "storageCapacity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SolarSystemResponse": {
+        "required": [
+          "id",
+          "name",
+          "planetIds",
+          "x",
+          "y",
+          "z"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          },
+          "z": {
+            "type": "number",
+            "format": "double"
+          },
+          "planetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "ApiKey": {
+        "type": "apiKey",
+        "name": "X-API-Key",
+        "in": "header"
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKey": [ ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Voidforge.Api.Endpoints.PingEndpoint"
+    },
+    {
+      "name": "Voidforge.Api.Endpoints.PlanetEndpoints"
+    },
+    {
+      "name": "Voidforge.Api.Endpoints.PlayerEndpoints"
+    },
+    {
+      "name": "Voidforge.Api.Endpoints.SolarSystemEndpoints"
+    }
+  ]
+}

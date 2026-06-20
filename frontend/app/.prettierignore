@@ -1,2 +1,5 @@
 dist/
 node_modules/
+
+# Vendored OpenAPI contract — re-fetched verbatim from the backend's /swagger endpoint
+openapi/

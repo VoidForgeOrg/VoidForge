@@ -7,6 +7,7 @@ using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
+using Voidforge.Api.OpenApi;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
 using Wolverine.Http;
@@ -52,6 +53,11 @@ builder.Services.AddWolverineHttp();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {
+    // Honor C# nullable reference types so the OpenAPI contract emits accurate
+    // `required` + nullability metadata (consumed by the generated frontend client).
+    opts.SupportNonNullableReferenceTypes();
+    opts.SchemaFilter<RequiredNonNullableSchemaFilter>();
+
     opts.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
         Name = ApiKeyAuthenticationDefaults.HeaderName,
