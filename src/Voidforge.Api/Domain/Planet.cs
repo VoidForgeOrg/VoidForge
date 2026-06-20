@@ -12,6 +12,7 @@ public sealed class Planet
     public int BuildingSlotCount { get; set; }
     public ResourcePool IronOre { get; set; } = new(0, 0, 0, default);
     public ResourcePool IronIngot { get; set; } = new(0, 0, 0, default);
+    public IList<BuildingSlot> Buildings { get; set; } = [];
 
     public void Apply(PlanetCreated @event)
     {
@@ -28,6 +29,22 @@ public sealed class Planet
         OwnerId = @event.OwnerId;
         IronOre = IronOre with { CheckpointValue = @event.IronOreStored, CheckpointTime = @event.ColonizedAt };
         IronIngot = IronIngot with { CheckpointValue = @event.IronIngotStored, CheckpointTime = @event.ColonizedAt };
+    }
+
+    public void Apply(BuildingPlaced @event)
+    {
+        Buildings.Add(new BuildingSlot(@event.BuildingType, BuildingStatus.Operational));
+
+        // A Drill increases the planet's Iron Ore extraction rate. Checkpoint first so resources
+        // accumulated under the previous rate are locked in before the rate changes; multiple
+        // drills are therefore additive.
+        if (@event.BuildingType == BuildingType.Drill)
+        {
+            IronOre = IronOre.Checkpoint(@event.PlacedAt) with
+            {
+                Rate = IronOre.Rate + @event.IronOreExtractionRate,
+            };
+        }
     }
 
     public void CheckpointAllResources(DateTimeOffset now)

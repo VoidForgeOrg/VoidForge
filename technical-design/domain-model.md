@@ -22,11 +22,21 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 ### Planet
 
 - **File**: `Domain/Planet.cs`
-- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored, ColonizedAt)`
-- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOre` (ResourcePool), `IronIngot` (ResourcePool)
+- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored, ColonizedAt)`, `BuildingPlaced(BuildingType, IronOreExtractionRate, PlacedAt)`
+- **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOre` (ResourcePool), `IronIngot` (ResourcePool), `Buildings` (`IList<BuildingSlot>`)
 - **Marten config**: `opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline)`
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
+
+`Apply(BuildingPlaced)` appends a `BuildingSlot` and, for a `Drill`, checkpoints `IronOre` at `PlacedAt` before adding `IronOreExtractionRate` to its rate — so accumulated ore is locked in at the old rate and multiple drills are additive.
+
+### Buildings (Value Objects)
+
+- **Files**: `Domain/BuildingType.cs` (`Drill`, `Refinery`, `Shipyard`, `Generator`), `Domain/BuildingStatus.cs` (`Operational` — grows to `UnderConstruction` in Phase 3, `Halted` in Phase 5), `Domain/BuildingSlot.cs` (`record BuildingSlot(BuildingType Type, BuildingStatus Status)`)
+- **Phase 2 semantics**: Placement is instant and free; no construction time, cost, or energy yet. Only the `Drill` has behavior (sets the planet's Iron Ore extraction rate). `Refinery` and `Generator` are placed but inert. Available slots = `BuildingSlotCount - Buildings.Count`.
+- **Placement**: `POST /api/planets/{planetId}/buildings` (`BuildingEndpoints.cs`) — appends a `BuildingPlaced` event. Rejects unowned planets (403), missing planets (404), and full slots (409).
+
+Homeworld starts with 1 Drill, 1 Refinery, 1 Generator, appended alongside `PlanetColonized` during registration.
 
 ### ResourcePool (Value Object)
 
@@ -60,11 +70,13 @@ Groups planets into a named system at a 3D position. Created during world seedin
 Registration (atomic transaction):
 ┌──────────────────────────────────────────────────┐
 │  1. StartStream<Player>(playerId, event)         │  → mt_events + mt_doc_player
-│  2. Append(homeworldId, PlanetColonized)         │  → mt_events + mt_doc_planet
+│  2. Append(homeworldId, PlanetColonized,         │  → mt_events + mt_doc_planet
+│       BuildingPlaced×3: Drill, Refinery, Generator)
 │  3. Store(new ApiKey { ... })                    │  → mt_doc_apikey
 │  4. SaveChangesAsync()                           │  → single DB transaction
 └──────────────────────────────────────────────────┘
   Homeworld: random uncolonized planet, colonized with starting resources
+  and starting buildings (Drill sets the Iron Ore extraction rate)
 
 Authentication:
   X-API-Key header → SHA-256 hash → query ApiKey doc → PlayerId → ClaimsPrincipal

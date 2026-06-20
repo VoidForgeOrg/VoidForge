@@ -1,3 +1,5 @@
+using Voidforge.Api.Domain;
+
 namespace Voidforge.Api.Endpoints;
 
 public sealed record PlanetResponse(
@@ -8,4 +10,23 @@ public sealed record PlanetResponse(
     long IronOrePool,
     int BuildingSlotCount,
     ResourcePoolResponse IronOre,
-    ResourcePoolResponse IronIngot);
+    ResourcePoolResponse IronIngot,
+    IReadOnlyList<BuildingSlotResponse> Buildings)
+{
+    public static PlanetResponse From(Planet planet, DateTimeOffset now) => new(
+        planet.Id,
+        planet.Name,
+        planet.SolarSystemId,
+        planet.OwnerId,
+        planet.IronOrePool,
+        planet.BuildingSlotCount,
+        new ResourcePoolResponse(
+            planet.IronOre.GetCurrentValue(now),
+            planet.IronOre.Rate,
+            planet.IronOre.StorageCapacity),
+        new ResourcePoolResponse(
+            planet.IronIngot.GetCurrentValue(now),
+            planet.IronIngot.Rate,
+            planet.IronIngot.StorageCapacity),
+        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status))]);
+}
