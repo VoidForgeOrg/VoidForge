@@ -1,10 +1,8 @@
 using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.Options;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
-using Voidforge.Api.WorldGeneration;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
@@ -17,8 +15,7 @@ public static class BuildingEndpoints
         Guid planetId,
         PlaceBuildingRequest request,
         ClaimsPrincipal principal,
-        IDocumentSession session,
-        IOptions<WorldGenOptions> worldGenOptions)
+        IDocumentSession session)
     {
         var planet = await session.LoadAsync<Planet>(planetId);
         if (planet is null)
@@ -32,17 +29,21 @@ public static class BuildingEndpoints
             return TypedResults.Forbid();
         }
 
-        if (planet.Buildings.Count >= planet.BuildingSlotCount)
+        var now = DateTimeOffset.UtcNow;
+
+        BuildingPlaced placed;
+        try
         {
-            return TypedResults.Conflict("No available building slots on this planet.");
+            // The slot-availability invariant lives in the domain; the endpoint maps its
+            // violation to a 409 response.
+            placed = planet.PlaceBuilding(request.BuildingType, now);
+        }
+        catch (NoFreeSlotsException ex)
+        {
+            return TypedResults.Conflict(ex.Message);
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var extractionRate = request.BuildingType == BuildingType.Drill
-            ? worldGenOptions.Value.DrillExtractionRate
-            : 0;
-
-        session.Events.Append(planetId, new BuildingPlaced(request.BuildingType, extractionRate, now));
+        session.Events.Append(planetId, placed);
         await session.SaveChangesAsync();
 
         var updated = await session.LoadAsync<Planet>(planetId);

@@ -31,18 +31,33 @@ public sealed class Planet
         IronIngot = IronIngot with { CheckpointValue = @event.IronIngotStored, CheckpointTime = @event.ColonizedAt };
     }
 
+    // Validates the slot invariant against current state and produces the event to append.
+    // Does not mutate — the resulting BuildingPlaced is applied via Apply once persisted.
+    // Ownership/authorization is an application concern and stays at the endpoint.
+    public BuildingPlaced PlaceBuilding(BuildingType type, DateTimeOffset placedAt)
+    {
+        if (Buildings.Count >= BuildingSlotCount)
+        {
+            throw new NoFreeSlotsException("No available building slots on this planet.");
+        }
+
+        return new BuildingPlaced(type, placedAt);
+    }
+
     public void Apply(BuildingPlaced @event)
     {
         Buildings.Add(new BuildingSlot(@event.BuildingType, BuildingStatus.Operational));
 
-        // A Drill increases the planet's Iron Ore extraction rate. Checkpoint first so resources
-        // accumulated under the previous rate are locked in before the rate changes; multiple
+        // A building's Iron Ore extraction rate (the Drill's, in Phase 2) is intrinsic to its
+        // type — looked up from BuildingSpecs rather than carried on the event. Checkpoint first
+        // so ore accrued under the previous rate is locked in before the rate changes; multiple
         // drills are therefore additive.
-        if (@event.BuildingType == BuildingType.Drill)
+        var extractionRate = BuildingSpecs.IronOreRatePerSecond(@event.BuildingType);
+        if (extractionRate != 0)
         {
             IronOre = IronOre.Checkpoint(@event.PlacedAt) with
             {
-                Rate = IronOre.Rate + @event.IronOreExtractionRate,
+                Rate = IronOre.Rate + extractionRate,
             };
         }
     }

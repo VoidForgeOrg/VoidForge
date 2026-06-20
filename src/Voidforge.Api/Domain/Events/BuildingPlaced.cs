@@ -1,7 +1,5 @@
 namespace Voidforge.Api.Domain.Events;
 
-// IronOreExtractionRate is only meaningful for Drills (0 for other building types in Phase 2).
-public sealed record BuildingPlaced(
-    BuildingType BuildingType,
-    decimal IronOreExtractionRate,
-    DateTimeOffset PlacedAt);
+// The building's effect (e.g. a Drill's extraction rate) is derived from BuildingSpecs when
+// applied — kept out of the event so balance values live in one place in the domain.
+public sealed record BuildingPlaced(BuildingType BuildingType, DateTimeOffset PlacedAt);

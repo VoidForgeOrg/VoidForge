@@ -11,5 +11,4 @@ public sealed class WorldGenOptions
     public decimal CoordinateRange { get; set; } = 1000;
     public long StartingIronOre { get; set; } = 500;
     public long StartingIronIngots { get; set; } = 100;
-    public decimal DrillExtractionRate { get; set; } = 10;
 }

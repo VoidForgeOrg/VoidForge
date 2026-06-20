@@ -57,11 +57,12 @@ public static class PlayerEndpoints
         // concurrency (expected version) on Append. Tracked in GitHub issue.
         session.Events.Append(homeworldId,
             new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots, now),
-            // Starting buildings: 1 Drill (sets ore extraction rate), 1 Refinery, 1 Generator.
-            // Refinery and Generator are inert in Phase 2. Placed at the colonization instant.
-            new BuildingPlaced(BuildingType.Drill, opts.DrillExtractionRate, now),
-            new BuildingPlaced(BuildingType.Refinery, 0, now),
-            new BuildingPlaced(BuildingType.Generator, 0, now));
+            // Starting buildings: 1 Drill (sets ore extraction rate via BuildingSpecs),
+            // 1 Refinery, 1 Generator. Refinery and Generator are inert in Phase 2.
+            // Placed at the colonization instant.
+            new BuildingPlaced(BuildingType.Drill, now),
+            new BuildingPlaced(BuildingType.Refinery, now),
+            new BuildingPlaced(BuildingType.Generator, now));
         session.Store(new ApiKey
         {
             Id = Guid.NewGuid(),

@@ -22,19 +22,21 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 ### Planet
 
 - **File**: `Domain/Planet.cs`
-- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored, ColonizedAt)`, `BuildingPlaced(BuildingType, IronOreExtractionRate, PlacedAt)`
+- **Events**: `PlanetCreated(Name, SolarSystemId, IronOrePool, BuildingSlotCount, IronOreStorageCapacity, IronIngotStorageCapacity)`, `PlanetColonized(OwnerId, IronOreStored, IronIngotStored, ColonizedAt)`, `BuildingPlaced(BuildingType, PlacedAt)`
 - **Snapshot fields**: `Id`, `Name`, `SolarSystemId`, `OwnerId` (nullable), `IronOrePool`, `BuildingSlotCount`, `IronOre` (ResourcePool), `IronIngot` (ResourcePool), `Buildings` (`IList<BuildingSlot>`)
+- **Behavior**: `PlaceBuilding(type, placedAt)` enforces the slot-availability invariant (throws `NoFreeSlotsException`) and returns the `BuildingPlaced` event to append — it does not mutate; the mutation happens in `Apply` once persisted.
 - **Marten config**: `opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline)`
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
 
-`Apply(BuildingPlaced)` appends a `BuildingSlot` and, for a `Drill`, checkpoints `IronOre` at `PlacedAt` before adding `IronOreExtractionRate` to its rate — so accumulated ore is locked in at the old rate and multiple drills are additive.
+`Apply(BuildingPlaced)` appends a `BuildingSlot` and, for any building with an extraction rate (the `Drill` in Phase 2), checkpoints `IronOre` at `PlacedAt` before adding the rate — so accumulated ore is locked in at the old rate and multiple drills are additive. The rate is looked up from `BuildingSpecs`, not carried on the event, so replay stays deterministic and balance values live in one place.
 
 ### Buildings (Value Objects)
 
 - **Files**: `Domain/BuildingType.cs` (`Drill`, `Refinery`, `Shipyard`, `Generator`), `Domain/BuildingStatus.cs` (`Operational` — grows to `UnderConstruction` in Phase 3, `Halted` in Phase 5), `Domain/BuildingSlot.cs` (`record BuildingSlot(BuildingType Type, BuildingStatus Status)`)
+- **`BuildingSpecs`** (`Domain/BuildingSpecs.cs`): intrinsic, balance-tunable stats per building type — `IronOreRatePerSecond(type)` (Drill = 10 units/sec; others 0). These are domain rules, not world-gen knobs. Units are **per second** to match `ResourcePool` (which accrues over elapsed `TotalSeconds`).
 - **Phase 2 semantics**: Placement is instant and free; no construction time, cost, or energy yet. Only the `Drill` has behavior (sets the planet's Iron Ore extraction rate). `Refinery` and `Generator` are placed but inert. Available slots = `BuildingSlotCount - Buildings.Count`.
-- **Placement**: `POST /api/planets/{planetId}/buildings` (`BuildingEndpoints.cs`) — appends a `BuildingPlaced` event. Rejects unowned planets (403), missing planets (404), and full slots (409).
+- **Placement**: `POST /api/planets/{planetId}/buildings` (`BuildingEndpoints.cs`). The endpoint owns the application concerns — existence (404) and ownership/authorization (403) — then delegates to `Planet.PlaceBuilding`, mapping `NoFreeSlotsException` to 409. The slot invariant itself lives in the domain.
 
 Homeworld starts with 1 Drill, 1 Refinery, 1 Generator, appended alongside `PlanetColonized` during registration.
 

@@ -96,9 +96,9 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
-        planet.Apply(new BuildingPlaced(BuildingType.Drill, 10, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
-        Assert.Equal(10m, planet.IronOre.Rate);
+        Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
         Assert.Single(planet.Buildings);
         Assert.Equal(BuildingType.Drill, planet.Buildings[0].Type);
         Assert.Equal(BuildingStatus.Operational, planet.Buildings[0].Status);
@@ -112,10 +112,10 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
-        planet.Apply(new BuildingPlaced(BuildingType.Drill, 10, placedAt));
-        planet.Apply(new BuildingPlaced(BuildingType.Drill, 15, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
-        Assert.Equal(25m, planet.IronOre.Rate);
+        Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill) * 2, planet.IronOre.Rate);
         Assert.Equal(2, planet.Buildings.Count);
     }
 
@@ -127,15 +127,17 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, colonizedAt));
 
-        // First drill runs for 10s at 10/sec, accumulating 100 ore. A second drill is then placed.
-        planet.Apply(new BuildingPlaced(BuildingType.Drill, 10, colonizedAt));
-        var secondPlacedAt = colonizedAt.AddSeconds(10);
-        planet.Apply(new BuildingPlaced(BuildingType.Drill, 10, secondPlacedAt));
+        var rate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill);
 
-        // 500 + 10/sec * 10s = 600 locked in at the rate change.
-        Assert.Equal(600m, planet.IronOre.CheckpointValue);
+        // First drill runs for 10s, accumulating rate*10 ore. A second drill is then placed.
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, colonizedAt));
+        var secondPlacedAt = colonizedAt.AddSeconds(10);
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, secondPlacedAt));
+
+        // 500 + rate * 10s locked in at the rate change.
+        Assert.Equal(500m + (rate * 10m), planet.IronOre.CheckpointValue);
         Assert.Equal(secondPlacedAt, planet.IronOre.CheckpointTime);
-        Assert.Equal(20m, planet.IronOre.Rate);
+        Assert.Equal(rate * 2, planet.IronOre.Rate);
     }
 
     [Fact]
@@ -146,11 +148,38 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
-        planet.Apply(new BuildingPlaced(BuildingType.Refinery, 0, placedAt));
-        planet.Apply(new BuildingPlaced(BuildingType.Generator, 0, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
 
         Assert.Equal(0m, planet.IronOre.Rate);
         Assert.Equal(2, planet.Buildings.Count);
+    }
+
+    [Fact]
+    public void PlaceBuildingReturnsEventWhenSlotAvailable()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+
+        var @event = planet.PlaceBuilding(BuildingType.Drill, placedAt);
+
+        Assert.Equal(BuildingType.Drill, @event.BuildingType);
+        Assert.Equal(placedAt, @event.PlacedAt);
+        // PlaceBuilding validates and produces the event; it does not mutate until applied.
+        Assert.Empty(planet.Buildings);
+    }
+
+    [Fact]
+    public void PlaceBuildingThrowsWhenSlotsFull()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+
+        Assert.Throws<NoFreeSlotsException>(() => planet.PlaceBuilding(BuildingType.Drill, placedAt));
     }
 
     [Fact]
