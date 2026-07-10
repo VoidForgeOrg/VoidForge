@@ -50,6 +50,7 @@ builder.Services.AddAuthorizationBuilder()
         .Build());
 
 builder.Services.AddWolverineHttp();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {

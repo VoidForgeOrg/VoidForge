@@ -15,7 +15,8 @@ public static class BuildingEndpoints
         Guid planetId,
         PlaceBuildingRequest request,
         ClaimsPrincipal principal,
-        IDocumentSession session)
+        IDocumentSession session,
+        TimeProvider timeProvider)
     {
         var planet = await session.LoadAsync<Planet>(planetId);
         if (planet is null)
@@ -29,7 +30,7 @@ public static class BuildingEndpoints
             return TypedResults.Forbid();
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
 
         BuildingPlaced placed;
         try
