@@ -75,4 +75,33 @@ public sealed class PaginationContractTests
         Assert.True(response.HasPrevious);
         Assert.False(response.HasNext);
     }
+
+    [Fact]
+    public void ToPagedResponseSlicesInMemoryList()
+    {
+        IReadOnlyList<int> source = Enumerable.Range(1, 12).ToList();
+        var parameters = PaginationParameters.Create(2, 5)!;
+
+        var response = source.ToPagedResponse(parameters, x => x * 10);
+
+        Assert.Equal([60, 70, 80, 90, 100], response.Items);  // page 2 of size 5 => items 6..10, x10
+        Assert.Equal(2, response.Page);
+        Assert.Equal(5, response.PageSize);
+        Assert.Equal(12, response.TotalItems);
+        Assert.Equal(3, response.TotalPages);
+        Assert.True(response.HasPrevious);
+        Assert.True(response.HasNext);
+    }
+
+    [Fact]
+    public void ToPagedResponseBeyondLastPageReturnsEmptyItemsWithFullTotal()
+    {
+        IReadOnlyList<int> source = Enumerable.Range(1, 3).ToList();
+        var parameters = PaginationParameters.Create(5, 10)!;
+
+        var response = source.ToPagedResponse(parameters, x => x);
+
+        Assert.Empty(response.Items);
+        Assert.Equal(3, response.TotalItems);
+    }
 }
