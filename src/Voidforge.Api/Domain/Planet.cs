@@ -47,19 +47,27 @@ public sealed class Planet
     public void Apply(BuildingPlaced @event)
     {
         Buildings.Add(new BuildingSlot(@event.BuildingType, BuildingStatus.Operational));
+        RebaseRates(@event.PlacedAt);
+    }
 
-        // A building's Iron Ore extraction rate (the Drill's, in Phase 2) is intrinsic to its
-        // type — looked up from BuildingSpecs rather than carried on the event. Checkpoint first
-        // so ore accrued under the previous rate is locked in before the rate changes; multiple
-        // drills are therefore additive.
-        var extractionRate = BuildingSpecs.IronOreRatePerSecond(@event.BuildingType);
-        if (extractionRate != 0)
-        {
-            IronOre = IronOre.Checkpoint(@event.PlacedAt) with
-            {
-                Rate = IronOre.Rate + extractionRate,
-            };
-        }
+    // Pool rates are a pure function of the operational building composition and the
+    // energy productivity multiplier m (spec: plans/phase-3-production-chain-design.md
+    // §2.2). Checkpoint first so value accrued under the old rates is locked in, then
+    // derive the new rates from scratch — incremental deltas would have to un-apply
+    // the previous multiplier. Every composition-changing Apply must end with this.
+    private void RebaseRates(DateTimeOffset at)
+    {
+        IronOre = IronOre.Checkpoint(at);
+        IronIngot = IronIngot.Checkpoint(at);
+
+        var multiplier = GetProductivityMultiplier();
+        var drillExtraction = Buildings
+            .Where(b => b.Status == BuildingStatus.Operational)
+            .Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type));
+
+        IronOre = IronOre with { Rate = drillExtraction * multiplier };
+        // Refinery conversion lands in #25 (PR 2); until then ingots accrue nothing.
+        IronIngot = IronIngot with { Rate = 0m };
     }
 
     public void CheckpointAllResources(DateTimeOffset now)
