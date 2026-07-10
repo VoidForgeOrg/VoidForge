@@ -2,6 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
+using Voidforge.Api.Pagination;
 using Xunit;
 
 namespace Voidforge.Tests.Planets;
@@ -28,9 +29,9 @@ public sealed class PlanetEndpointTests
             s.StatusCodeShouldBe(200);
         });
 
-        var systems = await result.ReadAsJsonAsync<List<SolarSystemResponse>>();
+        var systems = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
         Assert.NotNull(systems);
-        Assert.NotEmpty(systems);
+        Assert.NotEmpty(systems.Items);
     }
 
     [Fact]

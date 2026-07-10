@@ -2,6 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
+using Voidforge.Api.Pagination;
 using Xunit;
 
 namespace Voidforge.Tests.Buildings;
@@ -173,9 +174,9 @@ public sealed class BuildingEndpointTests
             s.StatusCodeShouldBe(200);
         });
 
-        var systems = await result.ReadAsJsonAsync<List<SolarSystemResponse>>();
+        var systems = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
         Assert.NotNull(systems);
-        var other = systems.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
+        var other = systems.Items.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
         return other;
     }
 
