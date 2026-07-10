@@ -96,12 +96,14 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
+        // A powered drill extracts at full rate (Generator 100 MW >= Drill 20 MW).
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
         Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
-        Assert.Single(planet.Buildings);
-        Assert.Equal(BuildingType.Drill, planet.Buildings[0].Type);
-        Assert.Equal(BuildingStatus.Operational, planet.Buildings[0].Status);
+        Assert.Equal(2, planet.Buildings.Count);
+        Assert.Equal(BuildingType.Drill, planet.Buildings[1].Type);
+        Assert.Equal(BuildingStatus.Operational, planet.Buildings[1].Status);
     }
 
     [Fact]
@@ -112,11 +114,12 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
         Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill) * 2, planet.IronOre.Rate);
-        Assert.Equal(2, planet.Buildings.Count);
+        Assert.Equal(3, planet.Buildings.Count);
     }
 
     [Fact]
@@ -129,7 +132,8 @@ public sealed class PlanetAggregateTests
 
         var rate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill);
 
-        // First drill runs for 10s, accumulating rate*10 ore. A second drill is then placed.
+        // First powered drill runs for 10s, accumulating rate*10 ore. Then a second drill lands.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, colonizedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, colonizedAt));
         var secondPlacedAt = colonizedAt.AddSeconds(10);
         planet.Apply(new BuildingPlaced(BuildingType.Drill, secondPlacedAt));
@@ -138,6 +142,39 @@ public sealed class PlanetAggregateTests
         Assert.Equal(500m + (rate * 10m), planet.IronOre.CheckpointValue);
         Assert.Equal(secondPlacedAt, planet.IronOre.CheckpointTime);
         Assert.Equal(rate * 2, planet.IronOre.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedDrillWithoutGeneratorExtractsNothing()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+
+        Assert.Equal(0m, planet.IronOre.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedOverloadRescalesExistingDrillRates()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        // Generator (100) + 4 Drills (80) + Refinery (30) => consumption 110, m = 100/110.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
+
+        var expectedRate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill) * 4 * (100m / 110m);
+        Assert.Equal(expectedRate, planet.IronOre.Rate);
     }
 
     [Fact]

@@ -11,6 +11,7 @@ public sealed record PlanetResponse(
     int BuildingSlotCount,
     ResourcePoolResponse IronOre,
     ResourcePoolResponse IronIngot,
+    EnergyResponse Energy,
     IReadOnlyList<BuildingSlotResponse> Buildings)
 {
     public static PlanetResponse From(Planet planet, DateTimeOffset now) => new(
@@ -28,5 +29,9 @@ public sealed record PlanetResponse(
             planet.IronIngot.GetCurrentValue(now),
             planet.IronIngot.Rate,
             planet.IronIngot.StorageCapacity),
+        new EnergyResponse(
+            planet.GetEnergyGenerationMw(),
+            planet.GetEnergyConsumptionMw(),
+            planet.GetProductivityMultiplier()),
         [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status))]);
 }
