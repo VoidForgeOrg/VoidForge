@@ -35,7 +35,7 @@ EnergyConsumptionMw    = Σ EnergyDrawMw over operational consumers
 ProductivityMultiplier m = consumption == 0 ? 1 : min(1, generation / consumption)
 ```
 
-`m ∈ (0, 1]`. Construction and ship-build ingot drains are **not** scaled by `m` (per the epic — they consume ingots, not energy).
+`m ∈ [0, 1]` — a planet with consumers but no operational Generator gets `m = 0` (drills/refineries stop entirely; the homeworld always starts with a Generator). Construction and ship-build ingot drains are **not** scaled by `m` (per the epic — they consume ingots, not energy).
 
 ### 2.2 The rate-rebase mechanism (replaces incremental wiring)
 
