@@ -67,4 +67,28 @@ public sealed class Planet
         IronOre = IronOre.Checkpoint(now);
         IronIngot = IronIngot.Checkpoint(now);
     }
+
+    // Energy is a flow resource: derived on demand from the operational building
+    // composition, never stored (game-design/resources.md). Methods rather than
+    // computed properties so they stay out of the Marten snapshot document.
+    public decimal GetEnergyGenerationMw() => Buildings
+        .Where(b => b.Status == BuildingStatus.Operational)
+        .Sum(b => BuildingSpecs.EnergyOutputMw(b.Type));
+
+    public decimal GetEnergyConsumptionMw() => Buildings
+        .Where(b => b.Status == BuildingStatus.Operational)
+        .Sum(b => BuildingSpecs.EnergyDrawMw(b.Type));
+
+    // In [0, 1]: 1 when demand is met (or there is no demand), generation/consumption
+    // when overloaded, 0 when consumers exist but no generator does.
+    public decimal GetProductivityMultiplier()
+    {
+        var consumption = GetEnergyConsumptionMw();
+        if (consumption == 0)
+        {
+            return 1m;
+        }
+
+        return Math.Min(1m, GetEnergyGenerationMw() / consumption);
+    }
 }
