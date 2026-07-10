@@ -237,6 +237,8 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 | Fleet arrival | Fleet departs | Handled by Wolverine Saga `TimeoutMessage` (see below) |
 | Storage full | Production rate changes | `StorageFull { PlanetId, ResourceType }` scheduled at `(capacity - current) / rate` |
 
+> Phase 3 (#26) introduces the first durable scheduled-message completion (`CompleteBuildingConstruction` → `BuildingCompleted`), following ADR 0001; #27 reuses the pattern for ships.
+
 ### Fleet Missions as Wolverine Sagas
 
 Fleet missions have a lifecycle (departure → transit → arrival → post-mission) that maps naturally to a **Wolverine Saga**. The saga persists its state as a Marten document and uses `TimeoutMessage` for the arrival event:
