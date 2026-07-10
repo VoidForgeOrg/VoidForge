@@ -33,8 +33,9 @@ public sealed class BuildingEndpointTests
         var planet = await result.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
         Assert.Equal(before.Buildings.Count + 1, planet.Buildings.Count);
-        // A second drill adds to the rate set by the starting drill.
-        Assert.Equal(before.IronOre.Rate * 2, planet.IronOre.Rate);
+        // Homeworld net ore rate is (drill 10 - refinery 5) = 5; a second drill adds a
+        // full drill's inflow (refinery demand already saturated), so net rises to 15.
+        Assert.Equal(before.IronOre.Rate + BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
     }
 
     [Fact]
@@ -60,7 +61,7 @@ public sealed class BuildingEndpointTests
     }
 
     [Fact]
-    public async Task PlaceRefineryDoesNotChangeIronOreRate()
+    public async Task PlaceRefineryConsumesOreAndRaisesIngotProduction()
     {
         var registration = await RegisterPlayer();
         var before = await GetPlanet(registration);
@@ -75,7 +76,10 @@ public sealed class BuildingEndpointTests
 
         var planet = await result.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
-        Assert.Equal(before.IronOre.Rate, planet.IronOre.Rate);
+        // A second refinery lifts demand to 10, saturating the single drill's inflow of 10:
+        // net ore rate falls from 5 to 0, ingot production rises from 10 to 20.
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(before.IronIngot.Rate + 10m, planet.IronIngot.Rate);
     }
 
     [Fact]

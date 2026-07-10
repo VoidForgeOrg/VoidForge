@@ -49,4 +49,25 @@ public sealed class BuildingSpecsTests
     {
         Assert.Equal(0m, BuildingSpecs.EnergyDrawMw(BuildingType.Generator));
     }
+
+    [Fact]
+    public void RefineryConsumesIronOreAtPositiveRate()
+    {
+        Assert.Equal(5m, BuildingSpecs.RefineryOreConsumptionPerSecond(BuildingType.Refinery));
+    }
+
+    [Theory]
+    [InlineData(BuildingType.Drill)]
+    [InlineData(BuildingType.Shipyard)]
+    [InlineData(BuildingType.Generator)]
+    public void NonRefineryBuildingsConsumeNoIronOre(BuildingType type)
+    {
+        Assert.Equal(0m, BuildingSpecs.RefineryOreConsumptionPerSecond(type));
+    }
+
+    [Fact]
+    public void RefineryIngotOutputFactorIsTwo()
+    {
+        Assert.Equal(2m, BuildingSpecs.RefineryIngotOutputFactor);
+    }
 }

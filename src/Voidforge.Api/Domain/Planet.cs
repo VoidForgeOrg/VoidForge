@@ -61,13 +61,20 @@ public sealed class Planet
         IronIngot = IronIngot.Checkpoint(at);
 
         var multiplier = GetProductivityMultiplier();
-        var drillExtraction = Buildings
-            .Where(b => b.Status == BuildingStatus.Operational)
-            .Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type));
+        var operational = Buildings.Where(b => b.Status == BuildingStatus.Operational).ToList();
 
-        IronOre = IronOre with { Rate = drillExtraction * multiplier };
-        // Refinery conversion lands in #25 (PR 2); until then ingots accrue nothing.
-        IronIngot = IronIngot with { Rate = 0m };
+        // Drill output and refinery input are both energy-throttled flows.
+        var oreInflow = operational.Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type)) * multiplier;
+        var refineryDemand = operational.Sum(b => BuildingSpecs.RefineryOreConsumptionPerSecond(b.Type)) * multiplier;
+
+        // Refineries convert the inflow, not the stored buffer: consumption is clamped to
+        // what the drills currently produce, so the net ore rate never goes negative in
+        // Phase 3 (buffer-draining + depletion cascades are Phase 5). Even-split falls out
+        // for free because the pools are planet-level scalars.
+        var effectiveConsumption = Math.Min(refineryDemand, oreInflow);
+
+        IronOre = IronOre with { Rate = oreInflow - effectiveConsumption };
+        IronIngot = IronIngot with { Rate = BuildingSpecs.RefineryIngotOutputFactor * effectiveConsumption };
     }
 
     public void CheckpointAllResources(DateTimeOffset now)
