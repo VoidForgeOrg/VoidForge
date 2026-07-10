@@ -5,6 +5,7 @@ using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
+using Voidforge.Api.Balance;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.OpenApi;
@@ -72,6 +73,7 @@ builder.Services.AddSwaggerGen(opts =>
     });
 });
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
+builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 

@@ -231,11 +231,13 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 
 | Game Event | Trigger | Scheduled Message |
 |------------|---------|-------------------|
-| Building completion | Player starts construction | `BuildingCompleted { PlanetId, SlotIndex }` scheduled at `now + buildDuration` |
+| Building completion | Player starts construction | `CompleteBuildingConstruction { PlanetId, SlotIndex, CompletesAt }` scheduled at `now + buildDuration`; resolves to the `BuildingCompleted { SlotIndex, CompletedAt }` stream event |
 | Ship completion | Shipyard starts building | `ShipCompleted { PlanetId, ShipyardId, ShipType }` scheduled at completion time |
 | Resource depletion | Drill starts mining | `ResourceDepleted { PlanetId, ResourceType }` scheduled at `poolSize / extractionRate` |
 | Fleet arrival | Fleet departs | Handled by Wolverine Saga `TimeoutMessage` (see below) |
 | Storage full | Production rate changes | `StorageFull { PlanetId, ResourceType }` scheduled at `(capacity - current) / rate` |
+
+> Phase 3 (#26) introduces the first durable scheduled-message completion (`CompleteBuildingConstruction` → `BuildingCompleted`), following ADR 0001; #27 reuses the pattern for ships.
 
 ### Fleet Missions as Wolverine Sagas
 

@@ -1,21 +1,28 @@
 using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
+using Voidforge.Api.Balance;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
+using Wolverine;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
 
 public static class BuildingEndpoints
 {
-    // Phase 2: placement is instant and free. Construction time, costs, and energy arrive in Phase 3.
+    // Placement starts construction (#26): the slot is taken immediately as UnderConstruction
+    // and ingots drain over cost/duration; a durable CompleteBuildingConstruction message is
+    // scheduled at the completion time (ADR 0001).
     [WolverinePost("/api/planets/{planetId}/buildings")]
     public static async Task<Results<Ok<PlanetResponse>, NotFound, ForbidHttpResult, Conflict<string>>> Place(
         Guid planetId,
         PlaceBuildingRequest request,
         ClaimsPrincipal principal,
         IDocumentSession session,
+        IMessageBus bus,
+        IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
         var planet = await session.LoadAsync<Planet>(planetId);
@@ -31,20 +38,24 @@ public static class BuildingEndpoints
         }
 
         var now = timeProvider.GetUtcNow();
+        var balance = balanceOptions.Value.ForBuilding(request.BuildingType);
 
-        BuildingPlaced placed;
+        BuildingConstructionStarted started;
         try
         {
-            // The slot-availability invariant lives in the domain; the endpoint maps its
-            // violation to a 409 response.
-            placed = planet.PlaceBuilding(request.BuildingType, now);
+            started = planet.StartConstruction(request.BuildingType, now, balance.IngotCost, balance.BuildDurationSeconds);
         }
         catch (NoFreeSlotsException ex)
         {
             return TypedResults.Conflict(ex.Message);
         }
 
-        session.Events.Append(planetId, placed);
+        session.Events.Append(planetId, started);
+        // Schedule completion through the Marten transactional outbox (persisted with this
+        // transaction; survives restart). Validate-on-arrival makes redelivery safe.
+        await bus.ScheduleAsync(
+            new CompleteBuildingConstruction(planetId, started.SlotIndex, started.CompletesAt),
+            started.CompletesAt);
         await session.SaveChangesAsync();
 
         var updated = await session.LoadAsync<Planet>(planetId);
