@@ -100,6 +100,8 @@ app.MapWolverineEndpoints(opts => opts.RequireAuthorizeOnAll());
 
 **Post-MVP:** Add JWT (OAuth2/OIDC) for the official web client with support for external identity providers (Discord, Google). API keys remain available for third-party clients and bots. Both auth schemes coexist via ASP.NET Core's multi-scheme authentication.
 
+> Collection endpoints follow the shared pagination contract — see [`api-conventions.md`](api-conventions.md).
+
 ### Real-time Push: Polling Only (MVP)
 
 For MVP, clients poll the API for state updates. The lazy calculation model makes this natural — every query returns the current computed state regardless of when it's called.
