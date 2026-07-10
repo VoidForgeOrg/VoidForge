@@ -29,12 +29,15 @@ Created during registration via `session.Events.StartStream<Player>(...)`.
 
 Created during world seeding via `session.Events.StartStream<Planet>(...)`. `OwnerId` starts null (uncolonized).
 
-`Apply(BuildingPlaced)` appends a `BuildingSlot` and, for any building with an extraction rate (the `Drill` in Phase 2), checkpoints `IronOre` at `PlacedAt` before adding the rate — so accumulated ore is locked in at the old rate and multiple drills are additive. The rate is looked up from `BuildingSpecs`, not carried on the event, so replay stays deterministic and balance values live in one place.
+`Apply(BuildingPlaced)` appends a `BuildingSlot` and calls `RebaseRates(at)`: both pools are checkpointed at the event instant (locking in value accrued under the old rates), then rates are re-derived from scratch as a pure function of the operational building composition × the energy productivity multiplier. Wholesale re-derivation (not incremental deltas) is required because the multiplier rescales every operational consumer whenever any building changes. Every composition-changing `Apply` must end with `RebaseRates`.
+
+**Energy** is a flow resource — derived on demand, never stored: `GetEnergyGenerationMw()` (Σ operational Generator output), `GetEnergyConsumptionMw()` (Σ operational consumer draw), `GetProductivityMultiplier()` (`1` when demand is met, `generation/consumption` when overloaded, `0` with consumers but no generator; range `[0, 1]`). These are methods, not computed properties, to stay out of the Marten snapshot document. Surfaced via the `EnergyResponse` block on `PlanetResponse`.
 
 ### Buildings (Value Objects)
 
 - **Files**: `Domain/BuildingType.cs` (`Drill`, `Refinery`, `Shipyard`, `Generator`), `Domain/BuildingStatus.cs` (`Operational` — grows to `UnderConstruction` in Phase 3, `Halted` in Phase 5), `Domain/BuildingSlot.cs` (`record BuildingSlot(BuildingType Type, BuildingStatus Status)`)
 - **`BuildingSpecs`** (`Domain/BuildingSpecs.cs`): intrinsic, balance-tunable stats per building type — `IronOreRatePerSecond(type)` (Drill = 10 units/sec; others 0). These are domain rules, not world-gen knobs. Units are **per second** to match `ResourcePool` (which accrues over elapsed `TotalSeconds`).
+  Energy specs (Phase 3, #24): `EnergyOutputMw(type)` (Generator = 100 MW) and `EnergyDrawMw(type)` (Drill 20 / Refinery 30 / Shipyard 40 MW; Shipyard's 5%-idle rule arrives with #27). Balance placeholders, TBD during balancing.
 - **Phase 2 semantics**: Placement is instant and free; no construction time, cost, or energy yet. Only the `Drill` has behavior (sets the planet's Iron Ore extraction rate). `Refinery` and `Generator` are placed but inert. Available slots = `BuildingSlotCount - Buildings.Count`.
 - **Placement**: `POST /api/planets/{planetId}/buildings` (`BuildingEndpoints.cs`). The endpoint owns the application concerns — existence (404) and ownership/authorization (403) — then delegates to `Planet.PlaceBuilding`, mapping `NoFreeSlotsException` to 409. The slot invariant itself lives in the domain.
 
@@ -47,7 +50,7 @@ Homeworld starts with 1 Drill, 1 Refinery, 1 Generator, appended alongside `Plan
 - **Methods**: `GetCurrentValue(now)` — computes `Clamp(checkpoint + rate * elapsed, 0, capacity)`; `Checkpoint(now)` — returns new instance with current value as baseline
 - **Semantics**: Immutable record. Methods return new instances. Rate starts at 0; buildings (#10) will set rates via checkpointing.
 
-Used by `Planet.IronOre` and `Planet.IronIngot`. The query endpoint computes current values at request time using `GetCurrentValue(DateTimeOffset.UtcNow)` — no background ticks needed.
+Used by `Planet.IronOre` and `Planet.IronIngot`. The query endpoint computes current values at request time using `GetCurrentValue(timeProvider.GetUtcNow())` — no background ticks needed.
 
 ## Documents
 
