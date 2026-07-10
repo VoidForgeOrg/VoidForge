@@ -30,6 +30,10 @@ public sealed class AppFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("Balance__Refinery__BuildDurationSeconds", "5");
         Environment.SetEnvironmentVariable("Balance__Generator__BuildDurationSeconds", "5");
         Environment.SetEnvironmentVariable("Balance__Shipyard__BuildDurationSeconds", "5");
+        Environment.SetEnvironmentVariable("Balance__ColonyShip__BuildDurationSeconds", "2");
+        Environment.SetEnvironmentVariable("Balance__ColonyShip__IngotCost", "20");
+        Environment.SetEnvironmentVariable("Balance__CargoVessel__BuildDurationSeconds", "2");
+        Environment.SetEnvironmentVariable("Balance__CargoVessel__IngotCost", "20");
 
         // Safety check: refuse to drop schema on a non-test database.
         var builder = new NpgsqlConnectionStringBuilder(connStr);

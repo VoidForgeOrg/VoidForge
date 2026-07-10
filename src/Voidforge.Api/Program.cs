@@ -39,6 +39,13 @@ builder.Host.UseWolverine(opts =>
 {
     opts.Policies.AutoApplyTransactions();
     opts.Durability.Mode = DurabilityMode.Solo;
+
+    // Single-node engine (Solo mode): scheduled completions for the same planet stream can be
+    // due at the identical instant (e.g. parallel ship builds started together). Concurrent
+    // handlers would race to append at the same next Marten stream version and collide. Since
+    // there is only one node, serializing local queue processing costs nothing at MVP scale and
+    // removes the whole class of same-aggregate races without per-handler retry logic.
+    opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1));
 });
 
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)

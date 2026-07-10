@@ -239,6 +239,12 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 
 > Phase 3 (#26) introduces the first durable scheduled-message completion (`CompleteBuildingConstruction` → `BuildingCompleted`), following ADR 0001; #27 reuses the pattern for ships.
 
+### Same-Stream Concurrency (#27)
+
+Ships introduce the first *parallel* completions on one aggregate: a Shipyard can run up to `ShipyardParallelBuilds` (3) builds at once, so several `CompleteShipConstruction` messages can share an identical `CompletesAt` and fire in the same `DurabilityAgent` poll. Wolverine's local queues process a poll batch with more than one worker by default, so concurrent handler instances raced to `session.Events.Append` the same planet stream at the same next version — surfaced as Postgres `23505` conflicts on `pk_mt_events_stream_and_version` in the end-to-end ship tests (`ShipConstructionCompletionTests`).
+
+Fix: `opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1))` in `Program.cs` serializes all local queue processing. `DurabilityMode.Solo` already means a single node, so this costs nothing at MVP scale and removes the whole class of same-aggregate races without per-handler catch/retry logic. Revisit if/when the engine scales beyond one node or message volume demands per-aggregate (rather than global) serialization.
+
 ### Fleet Missions as Wolverine Sagas
 
 Fleet missions have a lifecycle (departure → transit → arrival → post-mission) that maps naturally to a **Wolverine Saga**. The saga persists its state as a Marten document and uses `TimeoutMessage` for the arrival event:
