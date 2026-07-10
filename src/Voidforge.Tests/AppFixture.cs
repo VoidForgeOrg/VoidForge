@@ -23,6 +23,14 @@ public sealed class AppFixture : IAsyncLifetime
         // exhausts uncolonized planets (which would surface as 503s across unrelated tests).
         Environment.SetEnvironmentVariable("WorldGeneration__SolarSystemCount", "40");
 
+        // Short build durations so integration tests complete quickly. The drain rate
+        // (IngotCost / BuildDurationSeconds) is intentionally set to exceed the homeworld's
+        // +10/s ingot production so construction-drain assertions observe a falling balance.
+        Environment.SetEnvironmentVariable("Balance__Drill__BuildDurationSeconds", "5");
+        Environment.SetEnvironmentVariable("Balance__Refinery__BuildDurationSeconds", "5");
+        Environment.SetEnvironmentVariable("Balance__Generator__BuildDurationSeconds", "5");
+        Environment.SetEnvironmentVariable("Balance__Shipyard__BuildDurationSeconds", "5");
+
         // Safety check: refuse to drop schema on a non-test database.
         var builder = new NpgsqlConnectionStringBuilder(connStr);
         if (builder.Database is not { } db || !db.Contains("test", StringComparison.OrdinalIgnoreCase))

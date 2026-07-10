@@ -18,7 +18,7 @@ public sealed class BuildingEndpointTests
     }
 
     [Fact]
-    public async Task PlaceDrillIncreasesIronOreRateAdditively()
+    public async Task PlaceBuildingStartsConstruction()
     {
         var registration = await RegisterPlayer();
         var before = await GetPlanet(registration);
@@ -34,53 +34,39 @@ public sealed class BuildingEndpointTests
         var planet = await result.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
         Assert.Equal(before.Buildings.Count + 1, planet.Buildings.Count);
-        // Homeworld net ore rate is (drill 10 - refinery 5) = 5; a second drill adds a
-        // full drill's inflow (refinery demand already saturated), so net rises to 15.
-        Assert.Equal(before.IronOre.Rate + BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
+
+        var newSlot = planet.Buildings[^1];
+        Assert.Equal(BuildingStatus.UnderConstruction, newSlot.Status);
+        Assert.NotNull(newSlot.EtaCompletionUtc);
+        // The under-construction drill does not yet extract ore (homeworld drill only).
+        Assert.Equal(before.IronOre.Rate, planet.IronOre.Rate);
+        // Construction drains ingots: the ingot rate drops below the homeworld's +10/s.
+        Assert.True(planet.IronIngot.Rate < before.IronIngot.Rate,
+            $"Expected ingot rate to drop for construction drain: {before.IronIngot.Rate} -> {planet.IronIngot.Rate}");
     }
 
     [Fact]
-    public async Task PlaceDrillThenIronOreIncreasesOverTime()
+    public async Task UnderConstructionBuildingDrainsIngotsOverTime()
     {
         var registration = await RegisterPlayer();
 
         await _host.Scenario(s =>
         {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Drill))
+            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
                 .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(200);
         });
 
         var first = await GetPlanet(registration);
+        Assert.Equal(BuildingStatus.UnderConstruction, first.Buildings[^1].Status);
         await Task.Delay(1000);
         var second = await GetPlanet(registration);
 
-        Assert.True(
-            second.IronOre.CurrentValue > first.IronOre.CurrentValue,
-            $"Expected ore to increase: {first.IronOre.CurrentValue} -> {second.IronOre.CurrentValue}");
-    }
-
-    [Fact]
-    public async Task PlaceRefineryConsumesOreAndRaisesIngotProduction()
-    {
-        var registration = await RegisterPlayer();
-        var before = await GetPlanet(registration);
-
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Refinery))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        // A second refinery lifts demand to 10, saturating the single drill's inflow of 10:
-        // net ore rate falls from 5 to 0, ingot production rises from 10 to 20.
-        Assert.Equal(0m, planet.IronOre.Rate);
-        Assert.Equal(before.IronIngot.Rate + 10m, planet.IronIngot.Rate);
+        // With the short test build durations, drain exceeds the homeworld's +10/s ingot
+        // production, so the stored ingot value falls while UnderConstruction.
+        Assert.True(second.IronIngot.CurrentValue < first.IronIngot.CurrentValue,
+            $"Expected ingots to fall under construction drain: {first.IronIngot.CurrentValue} -> {second.IronIngot.CurrentValue}");
     }
 
     [Fact]

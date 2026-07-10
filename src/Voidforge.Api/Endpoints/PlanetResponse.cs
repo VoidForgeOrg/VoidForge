@@ -33,5 +33,5 @@ public sealed record PlanetResponse(
             planet.GetEnergyGenerationMw(),
             planet.GetEnergyConsumptionMw(),
             planet.GetProductivityMultiplier()),
-        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status))]);
+        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt))]);
 }
