@@ -21,7 +21,8 @@ public static class PlayerEndpoints
     public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
         RegisterPlayerRequest request,
         IDocumentSession session,
-        IOptions<WorldGenOptions> worldGenOptions)
+        IOptions<WorldGenOptions> worldGenOptions,
+        TimeProvider timeProvider)
     {
         var nameTaken = await session.Query<Player>()
             .AnyAsync(p => p.Name == request.Name);
@@ -50,7 +51,7 @@ public static class PlayerEndpoints
         var hashedKey = ApiKeyAuthenticationHandler.HashKey(rawKey);
         var opts = worldGenOptions.Value;
 
-        var now = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
 
         session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, now));
         // Race: two concurrent registrations can colonize the same planet. Fix with optimistic
