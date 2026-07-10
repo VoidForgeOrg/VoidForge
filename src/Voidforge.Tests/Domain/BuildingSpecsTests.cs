@@ -19,4 +19,34 @@ public sealed class BuildingSpecsTests
     {
         Assert.Equal(0m, BuildingSpecs.IronOreRatePerSecond(type));
     }
+
+    [Fact]
+    public void GeneratorOutputsEnergy()
+    {
+        Assert.Equal(100m, BuildingSpecs.EnergyOutputMw(BuildingType.Generator));
+    }
+
+    [Theory]
+    [InlineData(BuildingType.Drill)]
+    [InlineData(BuildingType.Refinery)]
+    [InlineData(BuildingType.Shipyard)]
+    public void NonGeneratorBuildingsOutputNoEnergy(BuildingType type)
+    {
+        Assert.Equal(0m, BuildingSpecs.EnergyOutputMw(type));
+    }
+
+    [Theory]
+    [InlineData(BuildingType.Drill, 20)]
+    [InlineData(BuildingType.Refinery, 30)]
+    [InlineData(BuildingType.Shipyard, 40)]
+    public void EnergyConsumersDrawEnergy(BuildingType type, int expectedMw)
+    {
+        Assert.Equal(expectedMw, BuildingSpecs.EnergyDrawMw(type));
+    }
+
+    [Fact]
+    public void GeneratorDrawsNoEnergy()
+    {
+        Assert.Equal(0m, BuildingSpecs.EnergyDrawMw(BuildingType.Generator));
+    }
 }
