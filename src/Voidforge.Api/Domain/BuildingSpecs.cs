@@ -28,4 +28,15 @@ public static class BuildingSpecs
         BuildingType.Shipyard => 40m,
         _ => 0m,
     };
+
+    // Iron Ore consumed per second by an operational Refinery (input rate). Balance
+    // placeholder, TBD during balancing.
+    public static decimal RefineryOreConsumptionPerSecond(BuildingType type) => type switch
+    {
+        BuildingType.Refinery => 5m,
+        _ => 0m,
+    };
+
+    // The 1:2 ore→ingot conversion ratio, in one place: ingot output = this × ore consumed.
+    public const decimal RefineryIngotOutputFactor = 2m;
 }
