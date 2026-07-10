@@ -83,10 +83,10 @@ public sealed class PlanetEndpointTests
         var planet = await planetResult.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
 
-        // The homeworld starts with a Drill, so Iron Ore extracts at a positive rate.
-        // The Refinery is inert in Phase 2, so Iron Ingots stay flat (rate 0).
+        // The homeworld starts with a Drill, so net Iron Ore accrues at a positive rate.
+        // The Refinery converts drill inflow at 1:2, so Iron Ingots accrue at 10/s.
         Assert.True(planet.IronOre.Rate > 0);
-        Assert.Equal(0m, planet.IronIngot.Rate);
+        Assert.Equal(10m, planet.IronIngot.Rate);
     }
 
     [Fact]

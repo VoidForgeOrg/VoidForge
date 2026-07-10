@@ -30,12 +30,13 @@ public sealed class EnergyGridTests
     }
 
     [Fact]
-    public async Task OverloadThrottlesDrillRateProportionally()
+    public async Task OverloadThrottlesProductionProportionally()
     {
         var registration = await RegisterPlayer();
 
-        // Homeworld: 50 MW draw, 3 free slots. Add Shipyard + Shipyard + Refinery
-        // => consumption 160 vs generation 100 => m = 0.625 exactly.
+        // Homeworld draw 50 MW + Shipyard(40) + Shipyard(40) + Refinery(30) = 160 MW
+        // vs 100 MW generation => m = 0.625 exactly. Now 2 refineries (demand 10) against
+        // 1 drill (inflow 10): effective consumption = min(10,10) x 0.625 = 6.25.
         await PlaceBuilding(registration, BuildingType.Shipyard);
         await PlaceBuilding(registration, BuildingType.Shipyard);
         await PlaceBuilding(registration, BuildingType.Refinery);
@@ -43,8 +44,10 @@ public sealed class EnergyGridTests
         var planet = await GetPlanet(registration);
 
         Assert.Equal(0.625m, planet.Energy.ProductivityMultiplier);
-        // One drill at 10/s, throttled: 10 * 0.625.
-        Assert.Equal(6.25m, planet.IronOre.Rate);
+        // Drill inflow (6.25) fully consumed by refineries => net ore 0.
+        Assert.Equal(0m, planet.IronOre.Rate);
+        // Ingots = 2 x 6.25 = 12.5 (throttled from the un-overloaded 20).
+        Assert.Equal(12.5m, planet.IronIngot.Rate);
     }
 
     [Fact]
@@ -63,7 +66,29 @@ public sealed class EnergyGridTests
         await PlaceBuilding(registration, BuildingType.Generator);
         var recovered = await GetPlanet(registration);
         Assert.Equal(1m, recovered.Energy.ProductivityMultiplier);
-        Assert.Equal(20m, recovered.IronOre.Rate);
+        // Two drills (inflow 20) minus the homeworld refinery (demand 5) => net ore 15.
+        Assert.Equal(15m, recovered.IronOre.Rate);
+    }
+
+    [Fact]
+    public async Task HomeworldRefineryProducesIngotsAtTwiceOreConsumption()
+    {
+        var registration = await RegisterPlayer();
+
+        var first = await GetPlanet(registration);
+        // Homeworld: drill inflow 10, refinery demand 5, m=1 => net ore +5/s, ingots +10/s.
+        Assert.Equal(5m, first.IronOre.Rate);
+        Assert.Equal(10m, first.IronIngot.Rate);
+
+        await Task.Delay(1000);
+        var second = await GetPlanet(registration);
+
+        // Both pools rise (refineries convert the inflow, not the stored buffer, so net ore
+        // stays positive); ingots climb at twice the effective ore consumption.
+        Assert.True(second.IronIngot.CurrentValue > first.IronIngot.CurrentValue,
+            $"Expected ingots to rise: {first.IronIngot.CurrentValue} -> {second.IronIngot.CurrentValue}");
+        Assert.True(second.IronOre.CurrentValue > first.IronOre.CurrentValue,
+            $"Expected net ore to rise: {first.IronOre.CurrentValue} -> {second.IronOre.CurrentValue}");
     }
 
     private async Task PlaceBuilding(RegisterPlayerResponse registration, BuildingType type)
