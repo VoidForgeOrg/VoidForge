@@ -231,7 +231,7 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 
 | Game Event | Trigger | Scheduled Message |
 |------------|---------|-------------------|
-| Building completion | Player starts construction | `BuildingCompleted { PlanetId, SlotIndex }` scheduled at `now + buildDuration` |
+| Building completion | Player starts construction | `CompleteBuildingConstruction { PlanetId, SlotIndex, CompletesAt }` scheduled at `now + buildDuration`; resolves to the `BuildingCompleted { SlotIndex, CompletedAt }` stream event |
 | Ship completion | Shipyard starts building | `ShipCompleted { PlanetId, ShipyardId, ShipType }` scheduled at completion time |
 | Resource depletion | Drill starts mining | `ResourceDepleted { PlanetId, ResourceType }` scheduled at `poolSize / extractionRate` |
 | Fleet arrival | Fleet departs | Handled by Wolverine Saga `TimeoutMessage` (see below) |
