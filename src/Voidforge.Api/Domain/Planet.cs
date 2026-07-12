@@ -253,7 +253,7 @@ public sealed class Planet
 
     public void Apply(ShipConstructionStarted @event)
     {
-        var index = IndexOfBuild(@event.BuildId);
+        var index = IndexOfShipBuild(@event.BuildId);
         ShipQueue[index] = ShipQueue[index] with
         {
             Status = ShipBuildStatus.Active,
@@ -265,7 +265,7 @@ public sealed class Planet
 
     public void Apply(ShipCompleted @event)
     {
-        var index = IndexOfBuild(@event.BuildId);
+        var index = IndexOfShipBuild(@event.BuildId);
         var build = ShipQueue[index];
         ShipQueue.RemoveAt(index);
         Ships.Add(new RosterShip(build.Id, build.Type, @event.CompletedAt));
@@ -274,12 +274,12 @@ public sealed class Planet
 
     public void Apply(ShipConstructionCancelled @event)
     {
-        var index = IndexOfBuild(@event.BuildId);
+        var index = IndexOfShipBuild(@event.BuildId);
         ShipQueue.RemoveAt(index);
         RebaseRates(@event.CancelledAt);
     }
 
-    private int IndexOfBuild(Guid buildId)
+    private int IndexOfShipBuild(Guid buildId)
     {
         for (var i = 0; i < ShipQueue.Count; i++)
         {
