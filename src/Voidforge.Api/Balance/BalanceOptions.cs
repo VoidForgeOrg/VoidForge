@@ -13,6 +13,9 @@ public sealed class BalanceOptions
     public ConstructionBalance Generator { get; set; } = new() { IngotCost = 240m, BuildDurationSeconds = 60m };
     public ConstructionBalance Shipyard { get; set; } = new() { IngotCost = 600m, BuildDurationSeconds = 120m };
 
+    public ConstructionBalance ColonyShip { get; set; } = new() { IngotCost = 1000m, BuildDurationSeconds = 300m };
+    public ConstructionBalance CargoVessel { get; set; } = new() { IngotCost = 400m, BuildDurationSeconds = 120m };
+
     public ConstructionBalance ForBuilding(BuildingType type) => type switch
     {
         BuildingType.Drill => Drill,
@@ -20,5 +23,12 @@ public sealed class BalanceOptions
         BuildingType.Generator => Generator,
         BuildingType.Shipyard => Shipyard,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown building type."),
+    };
+
+    public ConstructionBalance ForShip(ShipType type) => type switch
+    {
+        ShipType.ColonyShip => ColonyShip,
+        ShipType.CargoVessel => CargoVessel,
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown ship type."),
     };
 }

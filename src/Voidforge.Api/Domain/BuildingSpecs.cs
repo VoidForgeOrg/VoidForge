@@ -39,4 +39,9 @@ public static class BuildingSpecs
 
     // The 1:2 ore→ingot conversion ratio, in one place: ingot output = this × ore consumed.
     public const decimal RefineryIngotOutputFactor = 2m;
+
+    // Structural domain rules (not balance knobs): parallel ship-build bays per operational
+    // Shipyard, and the idle-draw fraction a Shipyard consumes with no active builds.
+    public const int ShipyardParallelBuilds = 3;
+    public const decimal ShipyardIdleDrawFactor = 0.05m;
 }

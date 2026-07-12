@@ -31,4 +31,15 @@ public sealed class BalanceOptionsTests
         var balance = new ConstructionBalance { IngotCost = 300m, BuildDurationSeconds = 0m };
         Assert.Equal(0m, balance.DrainPerSecond);
     }
+
+    [Fact]
+    public void ShipDefaultsMatchSpecPlaceholders()
+    {
+        var options = new BalanceOptions();
+
+        Assert.Equal(1000m, options.ForShip(ShipType.ColonyShip).IngotCost);
+        Assert.Equal(300m, options.ForShip(ShipType.ColonyShip).BuildDurationSeconds);
+        Assert.Equal(400m, options.ForShip(ShipType.CargoVessel).IngotCost);
+        Assert.Equal(120m, options.ForShip(ShipType.CargoVessel).BuildDurationSeconds);
+    }
 }

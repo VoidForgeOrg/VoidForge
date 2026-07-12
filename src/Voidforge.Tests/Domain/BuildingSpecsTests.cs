@@ -70,4 +70,16 @@ public sealed class BuildingSpecsTests
     {
         Assert.Equal(2m, BuildingSpecs.RefineryIngotOutputFactor);
     }
+
+    [Fact]
+    public void ShipyardParallelBuildsIsThree()
+    {
+        Assert.Equal(3, BuildingSpecs.ShipyardParallelBuilds);
+    }
+
+    [Fact]
+    public void ShipyardIdleDrawFactorIsFivePercent()
+    {
+        Assert.Equal(0.05m, BuildingSpecs.ShipyardIdleDrawFactor);
+    }
 }

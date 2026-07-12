@@ -12,6 +12,9 @@ public sealed record PlanetResponse(
     ResourcePoolResponse IronOre,
     ResourcePoolResponse IronIngot,
     EnergyResponse Energy,
+    int ShipCount,
+    int ActiveBuilds,
+    int QueueLength,
     IReadOnlyList<BuildingSlotResponse> Buildings)
 {
     public static PlanetResponse From(Planet planet, DateTimeOffset now) => new(
@@ -33,5 +36,8 @@ public sealed record PlanetResponse(
             planet.GetEnergyGenerationMw(),
             planet.GetEnergyConsumptionMw(),
             planet.GetProductivityMultiplier()),
+        planet.Ships.Count,
+        planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Active),
+        planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Queued),
         [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt))]);
 }
