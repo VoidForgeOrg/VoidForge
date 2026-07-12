@@ -90,15 +90,18 @@ Buildings are no longer instant — they cost Iron Ingots consumed over time.
 
 Shipyards build ships from ingots.
 
+> **Decision D5 (settled during implementation):** the queue is **planet-level with fungible bays**, not per-shipyard. Capacity = `3 × operational shipyards`; builds are not assigned to a specific shipyard. This revises the original "per-shipyard, not per-planet" wording below — it is simpler for players (one queue) and for energy accounting, and building a second shipyard transparently doubles throughput on the same queue. See `plans/phase-3-production-chain-design.md` §2.5.
+
 **Scope:**
 - `ShipType` enum: `ColonyShip`, `CargoVessel`.
-- Per-ship `IngotCost` + `BuildDuration` (`BuildingSpecs` or new `ShipSpecs`); TBD.
-- Ship construction consumes ingots continuously — same model as #26 (scheduled `ShipCompleted` message — ADR 0001).
-- Up to 3 parallel builds per shipyard, unlimited queue, queued ships auto-start as slots free.
-- Completed ships appended to a minimal planet ship roster (`RosterShip(Id, Type)`); fleet assembly is Phase 4.
-- Shipyard energy: full draw when ≥1 build active, **5% when idle** (first appearance of the 5% rule Phase 5 generalizes); ships add no extra draw.
-- `POST /api/planets/{planetId}/shipyards/{slotIndex}/queue` — queue a ship build.
-- Events: `ShipConstructionQueued`, `ShipConstructionStarted`, `ShipCompleted`.
+- Per-ship `IngotCost` + `BuildDuration` (config-backed `BalanceOptions.ForShip`, per D10's superseding mechanism from #26); TBD.
+- Ship construction consumes ingots continuously — same model as #26 (scheduled `CompleteShipConstruction` command → `ShipCompleted` event — ADR 0001).
+- **One planet-level FIFO queue; capacity `3 × operational shipyards`** (fungible bays, D5). Unlimited queue; enqueue is unconditional (a ship may be queued with no shipyard and waits); queued ships auto-start as capacity frees.
+- Completed ships appended to a minimal planet ship roster (`RosterShip(Id, Type, CompletedAt)`); fleet assembly is Phase 4.
+- Shipyard energy: full draw for `ceil(activeBuilds / 3)` shipyards, **5% when idle** (first appearance of the 5% rule Phase 5 generalizes); ships add no extra draw.
+- Ship-build **cancel** in Phase 3 (no refund) — the real exerciser of the validate-on-arrival stale guard.
+- `POST /api/planets/{planetId}/ship-queue` — queue a ship build; `DELETE .../ship-queue/{buildId}` — cancel; paginated `GET .../ship-queue` and `GET .../ships` (roster).
+- Events: `ShipConstructionQueued`, `ShipConstructionStarted`, `ShipCompleted`, `ShipConstructionCancelled`.
 - Integration test: queue >3 ships → 3 parallel, rest queued → ingot consumption → ships complete in order and appear on roster.
 
 **Depends on:** #26 (construction model), #24 (energy).
