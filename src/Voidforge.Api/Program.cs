@@ -5,6 +5,7 @@ using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
+using Voidforge.Api.Balance;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.OpenApi;
@@ -38,6 +39,13 @@ builder.Host.UseWolverine(opts =>
 {
     opts.Policies.AutoApplyTransactions();
     opts.Durability.Mode = DurabilityMode.Solo;
+
+    // Single-node engine (Solo mode): scheduled completions for the same planet stream can be
+    // due at the identical instant (e.g. parallel ship builds started together). Concurrent
+    // handlers would race to append at the same next Marten stream version and collide. Since
+    // there is only one node, serializing local queue processing costs nothing at MVP scale and
+    // removes the whole class of same-aggregate races without per-handler retry logic.
+    opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1));
 });
 
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
@@ -50,6 +58,7 @@ builder.Services.AddAuthorizationBuilder()
         .Build());
 
 builder.Services.AddWolverineHttp();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {
@@ -71,6 +80,7 @@ builder.Services.AddSwaggerGen(opts =>
     });
 });
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
+builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 

@@ -8,7 +8,10 @@ namespace Voidforge.Api.Endpoints;
 public static class PlanetEndpoints
 {
     [WolverineGet("/api/planets/{id}")]
-    public static async Task<Results<Ok<PlanetResponse>, NotFound>> GetById(Guid id, IQuerySession session)
+    public static async Task<Results<Ok<PlanetResponse>, NotFound>> GetById(
+        Guid id,
+        IQuerySession session,
+        TimeProvider timeProvider)
     {
         var planet = await session.LoadAsync<Planet>(id);
 
@@ -17,6 +20,6 @@ public static class PlanetEndpoints
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Ok(PlanetResponse.From(planet, DateTimeOffset.UtcNow));
+        return TypedResults.Ok(PlanetResponse.From(planet, timeProvider.GetUtcNow()));
     }
 }

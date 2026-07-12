@@ -100,6 +100,8 @@ app.MapWolverineEndpoints(opts => opts.RequireAuthorizeOnAll());
 
 **Post-MVP:** Add JWT (OAuth2/OIDC) for the official web client with support for external identity providers (Discord, Google). API keys remain available for third-party clients and bots. Both auth schemes coexist via ASP.NET Core's multi-scheme authentication.
 
+> Collection endpoints follow the shared pagination contract — see [`api-conventions.md`](api-conventions.md).
+
 ### Real-time Push: Polling Only (MVP)
 
 For MVP, clients poll the API for state updates. The lazy calculation model makes this natural — every query returns the current computed state regardless of when it's called.
@@ -229,11 +231,26 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 
 | Game Event | Trigger | Scheduled Message |
 |------------|---------|-------------------|
-| Building completion | Player starts construction | `BuildingCompleted { PlanetId, SlotIndex }` scheduled at `now + buildDuration` |
-| Ship completion | Shipyard starts building | `ShipCompleted { PlanetId, ShipyardId, ShipType }` scheduled at completion time |
+| Building completion | Player starts construction | `CompleteBuildingConstruction { PlanetId, SlotIndex, CompletesAt }` scheduled at `now + buildDuration`; resolves to the `BuildingCompleted { SlotIndex, CompletedAt }` stream event |
+| Ship completion | Shipyard starts building | `CompleteShipConstruction { PlanetId, BuildId, CompletesAt }` scheduled at `CompletesAt`; resolves to the `ShipCompleted { BuildId, CompletedAt }` stream event |
 | Resource depletion | Drill starts mining | `ResourceDepleted { PlanetId, ResourceType }` scheduled at `poolSize / extractionRate` |
 | Fleet arrival | Fleet departs | Handled by Wolverine Saga `TimeoutMessage` (see below) |
 | Storage full | Production rate changes | `StorageFull { PlanetId, ResourceType }` scheduled at `(capacity - current) / rate` |
+
+> Phase 3 (#26) introduces the first durable scheduled-message completion (`CompleteBuildingConstruction` → `BuildingCompleted`), following ADR 0001; #27 reuses the pattern for ships.
+
+### Same-Stream Concurrency (#27)
+
+Ships introduce the first *parallel* completions on one aggregate: a Shipyard can run up to `ShipyardParallelBuilds` (3) builds at once, so several `CompleteShipConstruction` messages can share an identical `CompletesAt` and fire in the same `DurabilityAgent` poll. Wolverine's local queues process a poll batch with more than one worker by default, so concurrent handler instances raced to `session.Events.Append` the same planet stream at the same next version — surfaced as Postgres `23505` conflicts on `pk_mt_events_stream_and_version` in the end-to-end ship tests (`ShipConstructionCompletionTests`).
+
+Fix: `opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1))` in `Program.cs` serializes each local queue to one worker. `DurabilityMode.Solo` already means a single node, so this costs nothing at MVP scale (it throttles only background completion processing, not the synchronous HTTP request path). Because each serialized handler reloads the *committed* snapshot from the previous one, this closes not just the `23505` but the **logical double-start** it would otherwise allow (two handlers both reading "3 active" and starting the same next-queued build).
+
+**Residual gaps (tracked follow-up — gate before Phase 4).** `MaximumParallelMessages(1)` bounds parallelism *within* a queue, not *across* queues or against the HTTP path, so same-planet-stream collisions remain possible in three narrowing cases:
+1. **Cross-message-type scheduled** — a `CompleteBuildingConstruction` and a `CompleteShipConstruction` for one planet in the same poll (separate queues).
+2. **HTTP-vs-scheduled** — a player command (`ShipEndpoints`/`BuildingEndpoints` append to the stream, *not* via a local queue, so this fix does nothing for them) landing within a poll of a scheduled completion. This is the pre-existing `EventAppendMode.Quick` gap noted in §7 and is the **most reachable** residual.
+3. **HTTP-vs-HTTP** — two concurrent commands on the same planet.
+
+An HTTP loser just returns 500 (should be 409); a *scheduled* loser, with **no retry policy configured**, could dead-letter — permanently losing the completion and leaving a ship stuck `Active` with a stalled queue. The correct general fix (which the idempotent validate-on-arrival guards already make safe) is optimistic-concurrency + a **retry-on-`ConcurrencyException`** policy on the completion handlers (never drop a completion) plus 409 mapping on the HTTP path — strictly more general than global serialization and free of the single-worker ceiling as more message types (fleet sagas) arrive. Revisit before Phase 4.
 
 ### Fleet Missions as Wolverine Sagas
 

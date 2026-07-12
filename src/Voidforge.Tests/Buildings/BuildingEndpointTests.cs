@@ -2,6 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
+using Voidforge.Api.Pagination;
 using Xunit;
 
 namespace Voidforge.Tests.Buildings;
@@ -17,7 +18,7 @@ public sealed class BuildingEndpointTests
     }
 
     [Fact]
-    public async Task PlaceDrillIncreasesIronOreRateAdditively()
+    public async Task PlaceBuildingStartsConstruction()
     {
         var registration = await RegisterPlayer();
         var before = await GetPlanet(registration);
@@ -33,49 +34,39 @@ public sealed class BuildingEndpointTests
         var planet = await result.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
         Assert.Equal(before.Buildings.Count + 1, planet.Buildings.Count);
-        // A second drill adds to the rate set by the starting drill.
-        Assert.Equal(before.IronOre.Rate * 2, planet.IronOre.Rate);
+
+        var newSlot = planet.Buildings[^1];
+        Assert.Equal(BuildingStatus.UnderConstruction, newSlot.Status);
+        Assert.NotNull(newSlot.EtaCompletionUtc);
+        // The under-construction drill does not yet extract ore (homeworld drill only).
+        Assert.Equal(before.IronOre.Rate, planet.IronOre.Rate);
+        // Construction drains ingots: the ingot rate drops below the homeworld's +10/s.
+        Assert.True(planet.IronIngot.Rate < before.IronIngot.Rate,
+            $"Expected ingot rate to drop for construction drain: {before.IronIngot.Rate} -> {planet.IronIngot.Rate}");
     }
 
     [Fact]
-    public async Task PlaceDrillThenIronOreIncreasesOverTime()
+    public async Task UnderConstructionBuildingDrainsIngotsOverTime()
     {
         var registration = await RegisterPlayer();
 
         await _host.Scenario(s =>
         {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Drill))
+            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
                 .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(200);
         });
 
         var first = await GetPlanet(registration);
+        Assert.Equal(BuildingStatus.UnderConstruction, first.Buildings[^1].Status);
         await Task.Delay(1000);
         var second = await GetPlanet(registration);
 
-        Assert.True(
-            second.IronOre.CurrentValue > first.IronOre.CurrentValue,
-            $"Expected ore to increase: {first.IronOre.CurrentValue} -> {second.IronOre.CurrentValue}");
-    }
-
-    [Fact]
-    public async Task PlaceRefineryDoesNotChangeIronOreRate()
-    {
-        var registration = await RegisterPlayer();
-        var before = await GetPlanet(registration);
-
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Refinery))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        Assert.Equal(before.IronOre.Rate, planet.IronOre.Rate);
+        // With the short test build durations, drain exceeds the homeworld's +10/s ingot
+        // production, so the stored ingot value falls while UnderConstruction.
+        Assert.True(second.IronIngot.CurrentValue < first.IronIngot.CurrentValue,
+            $"Expected ingots to fall under construction drain: {first.IronIngot.CurrentValue} -> {second.IronIngot.CurrentValue}");
     }
 
     [Fact]
@@ -169,9 +160,9 @@ public sealed class BuildingEndpointTests
             s.StatusCodeShouldBe(200);
         });
 
-        var systems = await result.ReadAsJsonAsync<List<SolarSystemResponse>>();
+        var systems = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
         Assert.NotNull(systems);
-        var other = systems.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
+        var other = systems.Items.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
         return other;
     }
 

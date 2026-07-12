@@ -96,12 +96,14 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
+        // A powered drill extracts at full rate (Generator 100 MW >= Drill 20 MW).
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
         Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
-        Assert.Single(planet.Buildings);
-        Assert.Equal(BuildingType.Drill, planet.Buildings[0].Type);
-        Assert.Equal(BuildingStatus.Operational, planet.Buildings[0].Status);
+        Assert.Equal(2, planet.Buildings.Count);
+        Assert.Equal(BuildingType.Drill, planet.Buildings[1].Type);
+        Assert.Equal(BuildingStatus.Operational, planet.Buildings[1].Status);
     }
 
     [Fact]
@@ -112,11 +114,12 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
 
         Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill) * 2, planet.IronOre.Rate);
-        Assert.Equal(2, planet.Buildings.Count);
+        Assert.Equal(3, planet.Buildings.Count);
     }
 
     [Fact]
@@ -129,7 +132,8 @@ public sealed class PlanetAggregateTests
 
         var rate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill);
 
-        // First drill runs for 10s, accumulating rate*10 ore. A second drill is then placed.
+        // First powered drill runs for 10s, accumulating rate*10 ore. Then a second drill lands.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, colonizedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, colonizedAt));
         var secondPlacedAt = colonizedAt.AddSeconds(10);
         planet.Apply(new BuildingPlaced(BuildingType.Drill, secondPlacedAt));
@@ -138,6 +142,97 @@ public sealed class PlanetAggregateTests
         Assert.Equal(500m + (rate * 10m), planet.IronOre.CheckpointValue);
         Assert.Equal(secondPlacedAt, planet.IronOre.CheckpointTime);
         Assert.Equal(rate * 2, planet.IronOre.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedDrillWithoutGeneratorExtractsNothing()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+
+        Assert.Equal(0m, planet.IronOre.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedOverloadRescalesExistingDrillRates()
+    {
+        var placedAt = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
+
+        // Generator (100) + 4 Drills (80) + Refinery (30) => consumption 110, m = 100/110.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
+
+        // Net ore rate = (drill inflow 40 - refinery consumption 5) x m.
+        var m = 100m / 110m;
+        Assert.Equal((40m - 5m) * m, planet.IronOre.Rate);
+        // Ingots = 2 x effective consumption; effective = min(refinery demand 5, inflow 40) x m = 5m.
+        Assert.Equal(BuildingSpecs.RefineryIngotOutputFactor * 5m * m, planet.IronIngot.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedRefineryConsumesOreAndProducesIngots()
+    {
+        var at = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
+
+        // Generator + Drill (inflow 10) + Refinery (demand 5), m = 1.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+
+        Assert.Equal(5m, planet.IronOre.Rate);    // 10 inflow - 5 consumed
+        Assert.Equal(10m, planet.IronIngot.Rate); // 2 x 5 consumed
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedRefineryDemandClampedToDrillInflow()
+    {
+        var at = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 7, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
+
+        // 2 Generators (200 MW) + Drill (20 MW) + 3 Refineries (90 MW) => m = 1.
+        // Drill inflow 10; 3-refinery demand 15 > inflow 10, m = 1.
+        // Effective consumption clamps to inflow 10; net ore 0; ingots 2 x 10 = 20.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(20m, planet.IronIngot.Rate);
+    }
+
+    [Fact]
+    public void ApplyBuildingPlacedRefineryWithoutDrillIsIdle()
+    {
+        var at = DateTimeOffset.UtcNow;
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
+
+        // Generator + Refinery, no Drill: no inflow, so nothing is consumed or produced.
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+
+        Assert.Equal(0m, planet.IronOre.Rate);
+        Assert.Equal(0m, planet.IronIngot.Rate);
     }
 
     [Fact]
