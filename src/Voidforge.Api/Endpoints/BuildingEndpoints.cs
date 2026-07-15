@@ -25,7 +25,12 @@ public static class BuildingEndpoints
         IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
-        var planet = await session.LoadAsync<Planet>(planetId);
+        // FetchForWriting arms Marten's optimistic-concurrency guard from the fetched stream version.
+        // A losing append fails on commit with a ConcurrencyException, mapped to 409 by
+        // ConcurrencyConflictExceptionHandler (the commit is issued by Wolverine's transactional
+        // middleware after this method returns, so it cannot be caught here).
+        var stream = await session.Events.FetchForWriting<Planet>(planetId);
+        var planet = stream.Aggregate;
         if (planet is null)
         {
             return TypedResults.NotFound();
@@ -50,7 +55,7 @@ public static class BuildingEndpoints
             return TypedResults.Conflict(ex.Message);
         }
 
-        session.Events.Append(planetId, started);
+        stream.AppendOne(started);
         // Schedule completion through the Marten transactional outbox (persisted with this
         // transaction; survives restart). Validate-on-arrival makes redelivery safe.
         await bus.ScheduleAsync(
@@ -58,7 +63,7 @@ public static class BuildingEndpoints
             started.CompletesAt);
         await session.SaveChangesAsync();
 
-        var updated = await session.LoadAsync<Planet>(planetId);
+        var updated = await session.Events.FetchLatest<Planet>(planetId);
         return TypedResults.Ok(PlanetResponse.From(updated!, now));
     }
 }

@@ -23,7 +23,12 @@ public static class ShipEndpoints
         IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
-        var planet = await session.LoadAsync<Planet>(planetId);
+        // FetchForWriting arms Marten's optimistic-concurrency guard from the fetched stream version.
+        // A losing append fails on commit with a ConcurrencyException, mapped to 409 by
+        // ConcurrencyConflictExceptionHandler (the commit is issued by Wolverine's transactional
+        // middleware after this method returns, so it cannot be caught here).
+        var stream = await session.Events.FetchForWriting<Planet>(planetId);
+        var planet = stream.Aggregate;
         if (planet is null)
         {
             return TypedResults.NotFound();
@@ -39,11 +44,11 @@ public static class ShipEndpoints
         var buildId = Guid.NewGuid();
 
         var events = planet.QueueShip(request.ShipType, now, buildId, balance.DrainPerSecond, balance.BuildDurationSeconds);
-        session.Events.Append(planetId, [.. events]);
+        stream.AppendMany([.. events]);
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, planetId, events);
         await session.SaveChangesAsync();
 
-        var updated = await session.LoadAsync<Planet>(planetId);
+        var updated = await session.Events.FetchLatest<Planet>(planetId);
         var build = updated!.ShipQueue.Single(b => b.Id == buildId);
         return TypedResults.Ok(new ShipBuildResponse(build.Id, build.Type, build.Status, build.CompletesAt));
     }
@@ -57,7 +62,9 @@ public static class ShipEndpoints
         IMessageBus bus,
         TimeProvider timeProvider)
     {
-        var planet = await session.LoadAsync<Planet>(planetId);
+        // FetchForWriting arms Marten's optimistic-concurrency guard from the fetched stream version.
+        var stream = await session.Events.FetchForWriting<Planet>(planetId);
+        var planet = stream.Aggregate;
         if (planet is null)
         {
             return TypedResults.NotFound();
@@ -75,11 +82,11 @@ public static class ShipEndpoints
             return TypedResults.NotFound();   // unknown build id
         }
 
-        session.Events.Append(planetId, [.. events]);
+        stream.AppendMany([.. events]);
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, planetId, events);
         await session.SaveChangesAsync();
 
-        var updated = await session.LoadAsync<Planet>(planetId);
+        var updated = await session.Events.FetchLatest<Planet>(planetId);
         return TypedResults.Ok(PlanetResponse.From(updated!, now));
     }
 

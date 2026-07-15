@@ -8,9 +8,11 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
+using Voidforge.Api.Http;
 using Voidforge.Api.OpenApi;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
+using Wolverine.ErrorHandling;
 using Wolverine.Http;
 using Wolverine.Marten;
 
@@ -40,12 +42,23 @@ builder.Host.UseWolverine(opts =>
     opts.Policies.AutoApplyTransactions();
     opts.Durability.Mode = DurabilityMode.Solo;
 
-    // Single-node engine (Solo mode): scheduled completions for the same planet stream can be
-    // due at the identical instant (e.g. parallel ship builds started together). Concurrent
-    // handlers would race to append at the same next Marten stream version and collide. Since
-    // there is only one node, serializing local queue processing costs nothing at MVP scale and
-    // removes the whole class of same-aggregate races without per-handler retry logic.
-    opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1));
+    // Same-planet-stream concurrency (#39). Multiple paths append to one Planet stream: parallel
+    // scheduled completions, and player commands (HTTP) landing in the same window. Marten
+    // optimistic concurrency (FetchForWriting at every append site) makes the loser fail with a
+    // ConcurrencyException instead of racing to a duplicate stream version. Completion handlers
+    // reload the committed snapshot and re-run on retry; the pure aggregate methods are idempotent
+    // (validate-on-arrival), so re-application is a safe no-op — a collided completion is retried
+    // to success and never dropped. The backoff ladder is generous so exhausting it (→ dead-letter)
+    // is effectively impossible for these rare, transient collisions at single-node MVP scale.
+    // This supersedes the previous MaximumParallelMessages(1) throttle: it is strictly more general
+    // (covers HTTP and cross-message-type races) and drops the single-worker throughput ceiling.
+    opts.OnException<ConcurrencyException>()
+        .RetryWithCooldown(
+            TimeSpan.FromMilliseconds(50),
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromMilliseconds(250),
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromSeconds(1));
 });
 
 builder.Services.AddAuthentication(ApiKeyAuthenticationDefaults.AuthenticationScheme)
@@ -58,6 +71,11 @@ builder.Services.AddAuthorizationBuilder()
         .Build());
 
 builder.Services.AddWolverineHttp();
+// Maps Marten's optimistic-concurrency failure on same-planet-stream appends to 409 (#39). The
+// conflicting commit is issued by Wolverine's transactional middleware after the endpoint returns,
+// so it must be handled here rather than inside the endpoint.
+builder.Services.AddExceptionHandler<ConcurrencyConflictExceptionHandler>();
+builder.Services.AddProblemDetails();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
@@ -86,6 +104,7 @@ builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseAuthentication();

@@ -9,7 +9,11 @@ public static class CompleteShipConstructionHandler
 {
     public static async Task Handle(CompleteShipConstruction message, IDocumentSession session, IMessageBus bus)
     {
-        var planet = await session.LoadAsync<Planet>(message.PlanetId);
+        // FetchForWriting loads the aggregate and arms Marten's optimistic-concurrency guard from the
+        // fetched stream version; a racing append then fails on SaveChanges with a ConcurrencyException
+        // (retried via the Wolverine policy in Program.cs) rather than colliding at the DB (#39).
+        var stream = await session.Events.FetchForWriting<Planet>(message.PlanetId);
+        var planet = stream.Aggregate;
         if (planet is null)
         {
             return;
@@ -21,7 +25,7 @@ public static class CompleteShipConstructionHandler
             return;
         }
 
-        session.Events.Append(message.PlanetId, [.. events]);
+        stream.AppendMany([.. events]);
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, message.PlanetId, events);
         await session.SaveChangesAsync();
     }
