@@ -25,6 +25,12 @@ public sealed class Fleet
     public DateTimeOffset? ArrivesAt { get; set; }
     public TravelPlan? TravelPlan { get; set; }
 
+    // Cargo snapshot (#50): decimal totals of the two cargo types. Per D8/D9, these are
+    // populated by CargoLoaded, decremented by CargoUnloaded. Existing pre-#50 snapshots
+    // deserialize with these 0, which is correct: a fleet that predates cargo has no cargo.
+    public decimal CargoIronOre { get; set; }
+    public decimal CargoIronIngot { get; set; }
+
     // Pure factory: the endpoint validates ship ownership (D13) and roster membership
     // before calling. Ships map 1:1 so the roster's sort key survives the round-trip.
     public static FleetAssembled Assemble(
@@ -59,6 +65,15 @@ public sealed class Fleet
         return Ships.Min(s => speedOf(s.Type));
     }
 
+    // Per D8: sums cargo capacity across all ships in the fleet. Like GetSpeed,
+    // it's config-free by design: the endpoint injects a lookup that maps ship types to
+    // their capacities (e.g., t => t == ShipType.CargoVessel ? 500m : 0m).
+    public decimal GetCargoCapacity(Func<ShipType, decimal> capacityOf)
+        => Ships.Sum(s => capacityOf(s.Type));
+
+    // Per D9: returns the total mass/volume of cargo currently aboard.
+    public decimal GetCargoLoad() => CargoIronOre + CargoIronIngot;
+
     // Stationed-only: the endpoint has already resolved the destination and travel plan.
     // Origin is the fleet's current location — captured before Apply blanks it.
     public FleetDeparted Depart(Guid destinationPlanetId, MissionType mission, TravelPlan plan, DateTimeOffset at)
@@ -81,6 +96,24 @@ public sealed class Fleet
         DepartedAt = @event.DepartedAt;
         ArrivesAt = @event.Plan.ArrivesAt;
         TravelPlan = @event.Plan;
+    }
+
+    // Per D11: unload cargo from this fleet at the destination planet. The amounts must
+    // be non-negative and cannot exceed what's aboard — these are programming errors,
+    // not user-facing. The endpoint computes amounts from the fleet's own cargo state.
+    public CargoUnloaded UnloadCargo(Guid planetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
+    {
+        if (ironOre < 0 || ironIngot < 0)
+        {
+            throw new InvalidOperationException("Cargo amounts cannot be negative.");
+        }
+
+        if (ironOre > CargoIronOre || ironIngot > CargoIronIngot)
+        {
+            throw new InvalidOperationException("Cannot unload more cargo than is aboard.");
+        }
+
+        return new CargoUnloaded(planetId, ironOre, ironIngot, at);
     }
 
     // Durable-message resolution (ADR 0001, D2 — supersedes architecture.md §4's Saga
@@ -115,12 +148,17 @@ public sealed class Fleet
         TravelPlan = null;
     }
 
-    // Stationed-only (409 at the endpoint). The cargo-empty guard (D11) arrives with #50.
+    // Stationed-only (409 at the endpoint). Per D11, cannot disband a fleet with cargo aboard.
     public FleetDisbanded Disband(DateTimeOffset at)
     {
         if (Status != FleetStatus.Stationed || LocationPlanetId is null)
         {
             throw new InvalidOperationException("Only a stationed fleet can be disbanded.");
+        }
+
+        if (GetCargoLoad() > 0)
+        {
+            throw new InvalidOperationException("Cannot disband a fleet with cargo aboard.");
         }
 
         return new FleetDisbanded(LocationPlanetId.Value, at);
@@ -134,6 +172,20 @@ public sealed class Fleet
         // location, not a claim of current presence. Status is the liveness signal
         // (#49/#50: don't read LocationPlanetId as "currently at this planet").
         Ships = [];
+    }
+
+    // Per D8: increments cargo totals when cargo is loaded.
+    public void Apply(CargoLoaded @event)
+    {
+        CargoIronOre += @event.IronOre;
+        CargoIronIngot += @event.IronIngot;
+    }
+
+    // Per D9: decrements cargo totals when cargo is unloaded.
+    public void Apply(CargoUnloaded @event)
+    {
+        CargoIronOre -= @event.IronOre;
+        CargoIronIngot -= @event.IronIngot;
     }
 
     // Ships leave carrying the fleet owner's id (D13) so they stay assemblable wherever
