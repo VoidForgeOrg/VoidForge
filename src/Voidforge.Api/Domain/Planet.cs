@@ -92,4 +92,76 @@ public sealed partial class Planet
         IronOre = IronOre.Checkpoint(now);
         IronIngot = IronIngot.Checkpoint(now);
     }
+
+    // Cargo storage mutations (spec §2.5, #50). A fleet loading from or delivering to a
+    // planet's buffer is a programming error, not a user-facing one — the endpoint
+    // pre-validates for its own 409 response; this is the defensive backstop.
+    public CargoLoadedFromStorage LoadCargoFromStorage(
+        Guid fleetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
+    {
+        if (ironOre < 0 || ironIngot < 0)
+        {
+            throw new InvalidOperationException("Cargo amounts cannot be negative.");
+        }
+
+        if (ironOre > IronOre.GetCurrentValue(at) || ironIngot > IronIngot.GetCurrentValue(at))
+        {
+            throw new InvalidOperationException("Cannot load more cargo than is in storage.");
+        }
+
+        return new CargoLoadedFromStorage(fleetId, ironOre, ironIngot, at);
+    }
+
+    // Both cargo Apply methods checkpoint the affected pool at `at` first — non-regressing
+    // per #44, so a backwards `at` freezes CheckpointTime but still locks in the value
+    // accrued up to it — then adjust only CheckpointValue, clamped to [0, StorageCapacity].
+    // Rate is deliberately left untouched and RebaseRates is deliberately NOT called: cargo
+    // moves stored value between a ship's hold and the planet's buffer, it never changes
+    // which buildings are operational, so it must not perturb the production/consumption
+    // rates RebaseRates derives from building composition (spec §2.5 — the only two
+    // composition-preserving Apply methods on this aggregate).
+    public void Apply(CargoLoadedFromStorage @event)
+    {
+        IronOre = IronOre.Checkpoint(@event.At);
+        IronOre = IronOre with
+        {
+            CheckpointValue = Math.Clamp(IronOre.CheckpointValue - @event.IronOre, 0, IronOre.StorageCapacity),
+        };
+
+        IronIngot = IronIngot.Checkpoint(@event.At);
+        IronIngot = IronIngot with
+        {
+            CheckpointValue = Math.Clamp(IronIngot.CheckpointValue - @event.IronIngot, 0, IronIngot.StorageCapacity),
+        };
+    }
+
+    // Computes the accepted amounts here (not at the caller) so the event itself carries
+    // the truth of what the planet actually took in — callers (the unload endpoint, the
+    // Transport arrival handler) read them straight off the event to build the matching
+    // Fleet-side CargoUnloaded, rather than re-deriving headroom themselves.
+    public CargoDeliveredToStorage AcceptCargoDelivery(
+        Guid fleetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
+    {
+        var acceptedOre = Math.Min(ironOre, Math.Max(0, IronOre.StorageCapacity - IronOre.GetCurrentValue(at)));
+        var acceptedIngot = Math.Min(ironIngot, Math.Max(0, IronIngot.StorageCapacity - IronIngot.GetCurrentValue(at)));
+
+        return new CargoDeliveredToStorage(fleetId, acceptedOre, acceptedIngot, at);
+    }
+
+    // See the rationale comment on Apply(CargoLoadedFromStorage): checkpoint-then-clamp,
+    // Rate untouched, no RebaseRates.
+    public void Apply(CargoDeliveredToStorage @event)
+    {
+        IronOre = IronOre.Checkpoint(@event.At);
+        IronOre = IronOre with
+        {
+            CheckpointValue = Math.Clamp(IronOre.CheckpointValue + @event.IronOre, 0, IronOre.StorageCapacity),
+        };
+
+        IronIngot = IronIngot.Checkpoint(@event.At);
+        IronIngot = IronIngot with
+        {
+            CheckpointValue = Math.Clamp(IronIngot.CheckpointValue + @event.IronIngot, 0, IronIngot.StorageCapacity),
+        };
+    }
 }

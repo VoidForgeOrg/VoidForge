@@ -57,7 +57,7 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 ### Disband Fleet
 - Disband a fleet stationed at a planet.
 - All ships return to the planet's ship roster.
-- Any cargo remains on the ships until manually unloaded (if applicable).
+- **Refused if the fleet is still carrying cargo** — unload it first (Trigger Unload, below), even at an unowned planet where the delivery has nowhere planetary to go and the fleet must simply end up empty.
 
 ### Trigger Unload
 - Unload cargo from a fleet stationed at an owned planet.

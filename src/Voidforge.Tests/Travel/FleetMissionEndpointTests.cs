@@ -51,18 +51,40 @@ public sealed class FleetMissionEndpointTests
         });
     }
 
+    // Transport became a valid mission in #50 — Colonize is the one still-unsupported mission
+    // (lands in #51), so it's the one this guard now exercises.
     [Fact]
     public async Task LaunchUnsupportedMissionReturns400()
     {
         var registration = await RegisterPlayer();
 
-        await _host.Scenario(s =>
+        var result = await _host.Scenario(s =>
         {
-            s.Post.Json(new LaunchMissionRequest(MissionType.Transport, Guid.NewGuid()))
+            s.Post.Json(new LaunchMissionRequest(MissionType.Colonize, Guid.NewGuid()))
                 .ToUrl($"/api/fleets/{Guid.NewGuid()}/missions");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(400);
         });
+
+        var body = result.ReadAsText();
+        Assert.Contains("Mission not supported yet.", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LaunchUnknownMissionTypeReturns400()
+    {
+        var registration = await RegisterPlayer();
+
+        var result = await _host.Scenario(s =>
+        {
+            s.Post.Json(new { mission = 99, destinationPlanetId = Guid.NewGuid() })
+                .ToUrl($"/api/fleets/{Guid.NewGuid()}/missions");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(400);
+        });
+
+        var body = result.ReadAsText();
+        Assert.Contains("Unknown mission type.", body, StringComparison.Ordinal);
     }
 
     [Fact]
