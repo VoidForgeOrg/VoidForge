@@ -142,6 +142,11 @@ public sealed partial class Planet
     public CargoDeliveredToStorage AcceptCargoDelivery(
         Guid fleetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
     {
+        if (ironOre < 0 || ironIngot < 0)
+        {
+            throw new InvalidOperationException("Cargo amounts cannot be negative.");
+        }
+
         var acceptedOre = Math.Min(ironOre, Math.Max(0, IronOre.StorageCapacity - IronOre.GetCurrentValue(at)));
         var acceptedIngot = Math.Min(ironIngot, Math.Max(0, IronIngot.StorageCapacity - IronIngot.GetCurrentValue(at)));
 

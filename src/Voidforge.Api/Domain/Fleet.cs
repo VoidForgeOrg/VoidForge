@@ -71,7 +71,7 @@ public sealed class Fleet
     public decimal GetCargoCapacity(Func<ShipType, decimal> capacityOf)
         => Ships.Sum(s => capacityOf(s.Type));
 
-    // Per D9: returns the total mass/volume of cargo currently aboard.
+    // Per D8: returns the total mass/volume of cargo currently aboard.
     public decimal GetCargoLoad() => CargoIronOre + CargoIronIngot;
 
     // Stationed-only: the endpoint has already resolved the destination and travel plan.
@@ -98,7 +98,7 @@ public sealed class Fleet
         TravelPlan = @event.Plan;
     }
 
-    // Per D11: unload cargo from this fleet at the destination planet. The amounts must
+    // Per D9: unload cargo from this fleet at the destination planet. The amounts must
     // be non-negative and cannot exceed what's aboard — these are programming errors,
     // not user-facing. The endpoint computes amounts from the fleet's own cargo state.
     public CargoUnloaded UnloadCargo(Guid planetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)

@@ -210,6 +210,7 @@ public sealed class TransportMissionEndpointTests
             .ToListAsync();
         var planetId = uncolonized[0];
 
+        // Relies on the IntegrationCollection's serialized test arrangement (no concurrent writer); must not be copied into a parallel context.
         session.Events.Append(planetId, new PlanetColonized(owner.PlayerId, ironOreStored, ironIngotStored, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync();
 
