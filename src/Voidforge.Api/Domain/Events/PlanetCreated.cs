@@ -6,4 +6,7 @@ public sealed record PlanetCreated(
     long IronOrePool,
     int BuildingSlotCount,
     long IronOreStorageCapacity,
-    long IronIngotStorageCapacity);
+    long IronIngotStorageCapacity,
+    decimal X,
+    decimal Y,
+    decimal Z);

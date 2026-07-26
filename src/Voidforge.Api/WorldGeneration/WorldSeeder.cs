@@ -29,6 +29,9 @@ public sealed partial class WorldSeeder(
         {
             var systemId = Guid.NewGuid();
             var planetIds = new List<Guid>();
+            var systemX = NextCoordinate(random, opts.CoordinateRange);
+            var systemY = NextCoordinate(random, opts.CoordinateRange);
+            var systemZ = NextCoordinate(random, opts.CoordinateRange);
 
             for (var p = 0; p < opts.PlanetsPerSystem; p++)
             {
@@ -41,16 +44,19 @@ public sealed partial class WorldSeeder(
                     IronOrePool: opts.IronOrePool,
                     BuildingSlotCount: opts.BuildingSlotCount,
                     IronOreStorageCapacity: opts.IronOreStorageCapacity,
-                    IronIngotStorageCapacity: opts.IronIngotStorageCapacity));
+                    IronIngotStorageCapacity: opts.IronIngotStorageCapacity,
+                    X: systemX + NextCoordinate(random, opts.PlanetSpread),
+                    Y: systemY + NextCoordinate(random, opts.PlanetSpread),
+                    Z: systemZ + NextCoordinate(random, opts.PlanetSpread)));
             }
 
             session.Store(new SolarSystem
             {
                 Id = systemId,
                 Name = $"System {s + 1}",
-                X = NextCoordinate(random, opts.CoordinateRange),
-                Y = NextCoordinate(random, opts.CoordinateRange),
-                Z = NextCoordinate(random, opts.CoordinateRange),
+                X = systemX,
+                Y = systemY,
+                Z = systemZ,
                 PlanetIds = planetIds,
             });
         }

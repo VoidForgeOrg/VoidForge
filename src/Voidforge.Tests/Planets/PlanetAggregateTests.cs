@@ -18,7 +18,10 @@ public sealed class PlanetAggregateTests
             IronOrePool: 50000,
             BuildingSlotCount: 6,
             IronOreStorageCapacity: 10000,
-            IronIngotStorageCapacity: 5000));
+            IronIngotStorageCapacity: 5000,
+            X: 0m,
+            Y: 0m,
+            Z: 0m));
 
         Assert.Equal("Test Planet", planet.Name);
         Assert.Equal(solarSystemId, planet.SolarSystemId);
@@ -71,7 +74,10 @@ public sealed class PlanetAggregateTests
             IronOrePool: 50000,
             BuildingSlotCount: 6,
             IronOreStorageCapacity: 10000,
-            IronIngotStorageCapacity: 5000));
+            IronIngotStorageCapacity: 5000,
+            X: 0m,
+            Y: 0m,
+            Z: 0m));
 
         planet.Apply(new PlanetColonized(
             OwnerId: ownerId,
@@ -93,7 +99,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
         // A powered drill extracts at full rate (Generator 100 MW >= Drill 20 MW).
@@ -111,7 +117,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
         planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
@@ -127,7 +133,7 @@ public sealed class PlanetAggregateTests
     {
         var colonizedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, colonizedAt));
 
         var rate = BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill);
@@ -149,7 +155,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
         planet.Apply(new BuildingPlaced(BuildingType.Drill, placedAt));
@@ -162,7 +168,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
         // Generator (100) + 4 Drills (80) + Refinery (30) => consumption 110, m = 100/110.
@@ -185,7 +191,7 @@ public sealed class PlanetAggregateTests
     {
         var at = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
 
         // Generator + Drill (inflow 10) + Refinery (demand 5), m = 1.
@@ -202,7 +208,7 @@ public sealed class PlanetAggregateTests
     {
         var at = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 7, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 7, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
 
         // 2 Generators (200 MW) + Drill (20 MW) + 3 Refineries (90 MW) => m = 1.
@@ -224,7 +230,7 @@ public sealed class PlanetAggregateTests
     {
         var at = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
 
         // Generator + Refinery, no Drill: no inflow, so nothing is consumed or produced.
@@ -240,7 +246,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
         planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
@@ -255,7 +261,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000, 0m, 0m, 0m));
 
         var @event = planet.PlaceBuilding(BuildingType.Drill, placedAt);
 
@@ -270,7 +276,7 @@ public sealed class PlanetAggregateTests
     {
         var placedAt = DateTimeOffset.UtcNow;
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 2, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
         planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
 
@@ -283,7 +289,7 @@ public sealed class PlanetAggregateTests
         var planet = new Planet();
         var colonizedAt = DateTimeOffset.UtcNow;
 
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, colonizedAt));
 
         // Manually set a rate to verify checkpoint math
