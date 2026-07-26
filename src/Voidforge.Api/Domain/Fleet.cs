@@ -192,4 +192,38 @@ public sealed class Fleet
     // they land — including a foreign or unowned planet's roster.
     public IReadOnlyList<RosterShip> ToRosterShips()
         => Ships.Select(s => new RosterShip(s.Id, s.Type, s.CompletedAt, OwnerId)).ToList();
+
+    // Per plan decision 3: picks the ColonyShip with the lowest (CompletedAt, Id) — the
+    // roster's stable sort — so replay and a #39-driven handler retry always agree on
+    // which ship is consumed, independent of in-memory Ships ordering.
+    public ColonyShipConsumed ConsumeColonyShip(Guid planetId, DateTimeOffset at)
+    {
+        var ship = Ships
+            .Where(s => s.Type == ShipType.ColonyShip)
+            .OrderBy(s => s.CompletedAt)
+            .ThenBy(s => s.Id)
+            .FirstOrDefault()
+            ?? throw new InvalidOperationException("Fleet holds no Colony Ship to consume.");
+
+        return new ColonyShipConsumed(planetId, ship.Id, at);
+    }
+
+    public void Apply(ColonyShipConsumed @event)
+    {
+        Ships = [.. Ships.Where(s => s.Id != @event.ShipId)];
+    }
+
+    // Losing the claim race (or targeting an already-owned planet): the fleet is already
+    // Stationed via FleetArrived, so there is nothing left to change. This event exists
+    // purely so history records that a colonize attempt was made and why it went nowhere —
+    // the observable outcome is "still stationed, colony ship intact, cargo intact."
+    public ColonizationFailed RecordColonizationFailure(Guid planetId, DateTimeOffset at)
+        => new(planetId, at);
+
+    // Empty-bodied by design (decision 4): a state no-op. Marten still needs the overload
+    // for event totality (every event type on the stream must have an Apply).
+    public void Apply(ColonizationFailed @event)
+    {
+        _ = @event;
+    }
 }
