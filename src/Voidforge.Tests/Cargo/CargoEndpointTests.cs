@@ -113,6 +113,32 @@ public sealed class CargoEndpointTests
         });
     }
 
+    // D13 regression (carry-over from Task 4's review): assembling WITHOUT cargo only
+    // validates ship ownership, never planet ownership — the inverse of
+    // AssembleCargoOnForeignPlanetReturns403EvenThoughShipsAreOwned above, which requests
+    // cargo and is correctly refused. Ships owned by the caller but stranded on a foreign
+    // planet's roster must still be re-assemblable there when no cargo is requested.
+    [Fact]
+    public async Task AssembleWithoutCargoOnForeignPlanetReturns200()
+    {
+        var owner = await RegisterPlayer();
+        var foreign = await RegisterPlayer();
+        var shipId = await BuildRosterShip(owner);
+        var fleet = await AssembleFleet(owner, [shipId]);   // no cargo yet
+
+        // Move (cargo-free) to the foreign homeworld, resolved instantly via the
+        // handler-invoked pattern (avoids waiting on the real scheduled arrival).
+        await MoveAndArriveInstantly(owner, fleet.Id, foreign.HomeworldId);
+        await Disband(owner, fleet.Id);   // ships land on the foreign planet's roster (D13: still owner-owned)
+
+        // The roster is on the foreign planet now, not owner's own homeworld.
+        var reassembled = await AssembleFleet(owner, [shipId], planetId: foreign.HomeworldId);
+
+        Assert.Equal(0m, reassembled.CargoIronOre);
+        Assert.Equal(0m, reassembled.CargoIronIngot);
+        Assert.Equal(foreign.HomeworldId, reassembled.LocationPlanetId);
+    }
+
     [Fact]
     public async Task AssembleCargoExceedingStoredAmountReturns409()
     {
@@ -234,12 +260,14 @@ public sealed class CargoEndpointTests
         return fleet;
     }
 
+    // planetId defaults to the registration's own homeworld; callers reassembling a roster
+    // stranded on a foreign planet (D13) pass that planet's id explicitly instead.
     private async Task<FleetResponse> AssembleFleet(
-        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds, CargoRequest? cargo = null)
+        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds, CargoRequest? cargo = null, Guid? planetId = null)
     {
         var result = await _host.Scenario(s =>
         {
-            s.Post.Json(new AssembleFleetRequest(shipIds, cargo)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
+            s.Post.Json(new AssembleFleetRequest(shipIds, cargo)).ToUrl($"/api/planets/{planetId ?? registration.HomeworldId}/fleets");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(200);
         });

@@ -14,10 +14,11 @@ namespace Voidforge.Api.Endpoints;
 
 public static class FleetEndpoints
 {
-    // Launch (#49, Move only — Transport/Colonize dispatch land in #50/#51). Only the Fleet
+    // Launch (#49 Move, #50 Transport — Colonize dispatch lands in #51). Only the Fleet
     // stream is touched (spec §2.3); the origin and destination planets are read for
-    // coordinates, never appended to. Arrival resolves durably via CompleteFleetArrival
-    // (ADR 0001), scheduled here and handled by CompleteFleetArrivalHandler.
+    // coordinates (and, for Transport, ownership), never appended to. Arrival resolves
+    // durably via CompleteFleetArrival (ADR 0001), scheduled here and handled by
+    // CompleteFleetArrivalHandler — which is where Transport's cargo delivery happens.
     [WolverinePost("/api/fleets/{fleetId}/missions")]
     public static async Task<Results<Ok<FleetResponse>, BadRequest<string>, NotFound, ForbidHttpResult, Conflict<string>>> Launch(
         Guid fleetId,
@@ -29,19 +30,10 @@ public static class FleetEndpoints
         IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
-        if (!Enum.IsDefined(request.Mission))
+        var requestError = ValidateLaunchRequest(request);
+        if (requestError is not null)
         {
-            return TypedResults.BadRequest("Unknown mission type.");
-        }
-
-        if (request.Mission != MissionType.Move)
-        {
-            return TypedResults.BadRequest("Mission not supported yet.");   // Transport → #50, Colonize → #51
-        }
-
-        if (request.DestinationPlanetId == Guid.Empty)
-        {
-            return TypedResults.BadRequest("destinationPlanetId is required.");
+            return requestError;
         }
 
         var stream = await session.Events.FetchForWriting<Fleet>(fleetId);
@@ -51,7 +43,8 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        if (PlayerId(principal) != fleet.OwnerId)
+        var playerId = PlayerId(principal);
+        if (playerId != fleet.OwnerId)
         {
             return TypedResults.Forbid();
         }
@@ -70,6 +63,13 @@ public static class FleetEndpoints
         if (destination is null)
         {
             return TypedResults.NotFound();
+        }
+
+        // Transport requires a same-owner destination (spec §2.4); re-checked on arrival —
+        // cannot fail pre-combat, but the caller (playerId) equals fleet.OwnerId here.
+        if (request.Mission == MissionType.Transport && destination.OwnerId != playerId)
+        {
+            return TypedResults.Forbid();
         }
 
         // Launch touches only the Fleet stream (spec §2.3) — the origin planet is read for
@@ -333,6 +333,30 @@ public static class FleetEndpoints
             .ToPagedResponseAsync(parameters,
                 f => new FleetSummaryResponse(f.Id, f.OwnerId, f.Status, f.LocationPlanetId, f.AssembledAt, f.Ships.Count));
         return TypedResults.Ok(response);
+    }
+
+    // Mission/destination shape checks that don't need the fleet or DB yet. Returns null
+    // when the request is valid; kept as its own method so Launch stays within MA0051's
+    // line limit.
+    private static Results<Ok<FleetResponse>, BadRequest<string>, NotFound, ForbidHttpResult, Conflict<string>>? ValidateLaunchRequest(
+        LaunchMissionRequest request)
+    {
+        if (!Enum.IsDefined(request.Mission))
+        {
+            return TypedResults.BadRequest("Unknown mission type.");
+        }
+
+        if (request.Mission == MissionType.Colonize)
+        {
+            return TypedResults.BadRequest("Mission not supported yet.");   // Colonize → #51
+        }
+
+        if (request.DestinationPlanetId == Guid.Empty)
+        {
+            return TypedResults.BadRequest("destinationPlanetId is required.");
+        }
+
+        return null;
     }
 
     // Resolves the requested ship ids against the planet's roster (409 if any are missing)
