@@ -13,7 +13,7 @@ public sealed class PlanetEventOrderingTests
     private static Planet Homeworld(DateTimeOffset at)
     {
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, at));
         planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
