@@ -1,3 +1,4 @@
+using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
 
 namespace Voidforge.Api.Domain;
@@ -132,5 +133,46 @@ public sealed partial class Planet
         }
 
         throw new InvalidOperationException($"Ship build {buildId} not found.");
+    }
+
+    // Assembly (#48): pure event factory. The endpoint has already resolved and authorized
+    // the ships; an id missing here is a programming error, not a user error.
+    public ShipsRemovedFromRoster RemoveShipsFromRoster(Guid fleetId, IReadOnlyList<Guid> shipIds, DateTimeOffset at)
+    {
+        foreach (var shipId in shipIds)
+        {
+            if (!Ships.Any(s => s.Id == shipId))
+            {
+                throw new InvalidOperationException($"Ship {shipId} is not on the roster.");
+            }
+        }
+
+        return new ShipsRemovedFromRoster(fleetId, shipIds, at);
+    }
+
+    // Disband (#48): ships come back carrying the fleet owner's id (D13).
+    public ShipsAddedToRoster ReturnShipsToRoster(Guid fleetId, IReadOnlyList<RosterShip> ships, DateTimeOffset at)
+        => new(fleetId, ships, at);
+
+    public void Apply(ShipsRemovedFromRoster @event)
+    {
+        foreach (var shipId in @event.ShipIds)
+        {
+            var index = Ships.ToList().FindIndex(s => s.Id == shipId);
+            if (index >= 0)
+            {
+                Ships.RemoveAt(index);
+            }
+        }
+        // Roster ships are inert — no rate change, so no RebaseRates.
+    }
+
+    public void Apply(ShipsAddedToRoster @event)
+    {
+        foreach (var ship in @event.Ships)
+        {
+            Ships.Add(ship);
+        }
+        // Roster ships are inert — no rate change, so no RebaseRates.
     }
 }

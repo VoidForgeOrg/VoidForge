@@ -31,4 +31,41 @@ public sealed class PlanetRosterMutationTests
         Assert.Equal(shipId, ship.Id);
         Assert.Equal(ownerId, ship.OwnerId);
     }
+
+    [Fact]
+    public void RemoveShipsFromRosterRemovesExactlyThoseShips()
+    {
+        var (planet, _, shipId) = PlanetWithRosterShip();
+        var fleetId = Guid.NewGuid();
+
+        var @event = planet.RemoveShipsFromRoster(fleetId, [shipId], T0.AddSeconds(120));
+        planet.Apply(@event);
+
+        Assert.Empty(planet.Ships);
+        Assert.Equal(fleetId, @event.FleetId);
+        Assert.Equal([shipId], @event.ShipIds);
+    }
+
+    [Fact]
+    public void RemoveShipsFromRosterWithUnknownIdThrows()
+    {
+        var (planet, _, _) = PlanetWithRosterShip();
+
+        Assert.Throws<InvalidOperationException>(
+            () => planet.RemoveShipsFromRoster(Guid.NewGuid(), [Guid.NewGuid()], T0));
+    }
+
+    [Fact]
+    public void ReturnShipsToRosterRestoresShipsWithOwner()
+    {
+        var (planet, ownerId, shipId) = PlanetWithRosterShip();
+        planet.Apply(planet.RemoveShipsFromRoster(Guid.NewGuid(), [shipId], T0.AddSeconds(120)));
+
+        var returned = new RosterShip(shipId, ShipType.CargoVessel, T0.AddSeconds(60), ownerId);
+        planet.Apply(planet.ReturnShipsToRoster(Guid.NewGuid(), [returned], T0.AddSeconds(200)));
+
+        var ship = Assert.Single(planet.Ships);
+        Assert.Equal(ownerId, ship.OwnerId);
+        Assert.Equal(shipId, ship.Id);
+    }
 }
