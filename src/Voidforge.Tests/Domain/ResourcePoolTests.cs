@@ -65,6 +65,54 @@ public sealed class ResourcePoolTests
         Assert.Equal(500m, pool.GetCurrentValue(checkpoint.AddSeconds(100)));
     }
 
+    // #44: event `at` timestamps are not guaranteed monotonic along a Planet stream (a late
+    // completion can commit after a newer command). A backwards `now` must be inert, never
+    // negative-accrual and never a regressed checkpoint.
+    [Fact]
+    public void BackwardsTimeDoesNotDrainAnAccruingPool()
+    {
+        var checkpoint = DateTimeOffset.UtcNow;
+        var pool = new ResourcePool(100, 10, 1000, checkpoint);
+
+        // Unfloored elapsed would give 100 + 10 * (-5) = 50.
+        Assert.Equal(100m, pool.GetCurrentValue(checkpoint.AddSeconds(-5)));
+    }
+
+    [Fact]
+    public void BackwardsTimeDoesNotFabricateResourcesInADrainingPool()
+    {
+        var checkpoint = DateTimeOffset.UtcNow;
+        var pool = new ResourcePool(100, -10, 1000, checkpoint);
+
+        // Negative rate * negative elapsed invents resources: 100 + (-10) * (-5) = 150.
+        Assert.Equal(100m, pool.GetCurrentValue(checkpoint.AddSeconds(-5)));
+    }
+
+    [Fact]
+    public void CheckpointDoesNotRegressTime()
+    {
+        var checkpoint = DateTimeOffset.UtcNow;
+        var pool = new ResourcePool(100, 10, 1000, checkpoint);
+
+        var checkpointed = pool.Checkpoint(checkpoint.AddSeconds(-5));
+
+        // A regressed CheckpointTime re-accrues the rewound interval on every later read.
+        Assert.Equal(checkpoint, checkpointed.CheckpointTime);
+        Assert.Equal(100m, checkpointed.CheckpointValue);
+    }
+
+    [Fact]
+    public void CheckpointAtSameInstantIsIdempotent()
+    {
+        var checkpoint = DateTimeOffset.UtcNow;
+        var pool = new ResourcePool(100, 10, 1000, checkpoint);
+
+        var checkpointed = pool.Checkpoint(checkpoint);
+
+        Assert.Equal(checkpoint, checkpointed.CheckpointTime);
+        Assert.Equal(100m, checkpointed.CheckpointValue);
+    }
+
     [Fact]
     public void IsImmutable()
     {

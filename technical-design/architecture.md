@@ -362,6 +362,11 @@ public class Planet
 }
 ```
 
+> **Sketch, not current state.** The shipped `ResourcePool` is an immutable `sealed record` with named
+> `IronOre`/`IronIngot` fields rather than a `Dictionary<ResourceType, ResourcePool>`, and `elapsed`
+> is floored at 0 because event `at` timestamps are not guaranteed non-decreasing along a stream
+> (#44). See [domain-model.md](domain-model.md#resourcepool-value-object) for the authoritative shape.
+
 ### Write Path (State-Changing Events)
 
 When an event fires (building completes, resource depletes, player issues a command):
