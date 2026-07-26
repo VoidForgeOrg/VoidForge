@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Voidforge.Api.Domain;
+using Voidforge.Api.Pagination;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
@@ -98,6 +99,75 @@ public static class FleetEndpoints
 
         var updated = await session.Events.FetchLatest<Fleet>(fleetId);
         return TypedResults.Ok(FleetResponse.From(updated!));
+    }
+
+    // The caller's fleets (mutation-adjacent view — scoped to owner rather than universe,
+    // matching "my empire" reads). Disbanded fleets are history: excluded unless asked for.
+    [WolverineGet("/api/fleets")]
+    public static async Task<Results<Ok<PagedResponse<FleetSummaryResponse>>, BadRequest<string>>> GetOwnFleets(
+        ClaimsPrincipal principal,
+        IQuerySession session,
+        FleetStatus? status = null,
+        int? page = null,
+        int? pageSize = null)
+    {
+        var parameters = PaginationParameters.Create(
+            page ?? PaginationParameters.DefaultPage,
+            pageSize ?? PaginationParameters.DefaultPageSize);
+        if (parameters is null)
+        {
+            return TypedResults.BadRequest("page and pageSize must be >= 1.");
+        }
+
+        var playerId = PlayerId(principal);
+        var query = session.Query<Fleet>().Where(f => f.OwnerId == playerId);
+        query = status is null
+            ? query.Where(f => f.Status != FleetStatus.Disbanded)
+            : query.Where(f => f.Status == status);
+
+        var response = await query
+            .OrderBy(f => f.AssembledAt).ThenBy(f => f.Id)
+            .ToPagedResponseAsync(parameters,
+                f => new FleetSummaryResponse(f.Id, f.OwnerId, f.Status, f.LocationPlanetId, f.AssembledAt, f.Ships.Count));
+        return TypedResults.Ok(response);
+    }
+
+    // Universe-visible (full visibility, no fog of war in MVP).
+    [WolverineGet("/api/fleets/{fleetId}")]
+    public static async Task<Results<Ok<FleetResponse>, NotFound>> GetFleet(Guid fleetId, IQuerySession session)
+    {
+        var fleet = await session.LoadAsync<Fleet>(fleetId);
+        return fleet is null ? TypedResults.NotFound() : TypedResults.Ok(FleetResponse.From(fleet));
+    }
+
+    // Universe-visible: fleets currently stationed at this planet.
+    [WolverineGet("/api/planets/{planetId}/fleets")]
+    public static async Task<Results<Ok<PagedResponse<FleetSummaryResponse>>, NotFound, BadRequest<string>>> GetPlanetFleets(
+        Guid planetId,
+        IQuerySession session,
+        int? page = null,
+        int? pageSize = null)
+    {
+        var planet = await session.LoadAsync<Planet>(planetId);
+        if (planet is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var parameters = PaginationParameters.Create(
+            page ?? PaginationParameters.DefaultPage,
+            pageSize ?? PaginationParameters.DefaultPageSize);
+        if (parameters is null)
+        {
+            return TypedResults.BadRequest("page and pageSize must be >= 1.");
+        }
+
+        var response = await session.Query<Fleet>()
+            .Where(f => f.LocationPlanetId == planetId && f.Status == FleetStatus.Stationed)
+            .OrderBy(f => f.AssembledAt).ThenBy(f => f.Id)
+            .ToPagedResponseAsync(parameters,
+                f => new FleetSummaryResponse(f.Id, f.OwnerId, f.Status, f.LocationPlanetId, f.AssembledAt, f.Ships.Count));
+        return TypedResults.Ok(response);
     }
 
     private static Guid? PlayerId(ClaimsPrincipal principal)
