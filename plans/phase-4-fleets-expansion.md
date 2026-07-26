@@ -107,3 +107,14 @@ Fleets claim uncolonized planets.
 - Transport delivers resources to another owned planet, with partial unload when storage is full
 - Move relocates ships
 - The game is multi-planet: build up economy → build ships → expand → build up new colony
+
+## Execution workflow
+
+Settled 2026-07-26, before implementation started; mirrors Phase 3.
+
+- **Integration branch:** `phase-4` off `main`. One feature branch + PR per issue, targeting `phase-4`; self-merged on green CI. The phase ends with a single PR `phase-4` → `main` closing epic #52.
+- **Branches, in order:** `feat/planet-partial-split` (#40), `feat/fleet-assembly` (#48), `feat/fleet-travel` (#49), `feat/fleet-cargo` (#50), `feat/fleet-colonize` (#51). Strictly sequential — #50/#51 are design-independent but share `Fleet` and the arrival mission dispatch, so parallel branches would conflict.
+- **Just-in-time plans:** each issue's implementation plan is written against the codebase as it exists after the previous merge, and lands as the first commit on its feature branch under `plans/phase-4/<issue>-<slug>.md`.
+- **Per-PR gates:** the §8 merge-gate test, full `dotnet test` green, `dotnet format` clean, a code-review pass on the diff, CI green.
+- **Docs owned by each PR:** `domain-model.md` (every PR); `fleets.md` D6 update (#48); `architecture.md` §4 supersession (#49).
+- **Reporting:** no per-PR check-ins; report at phase end with the full loop demonstrated (economy → ships → expand → new colony). Interruptions only for genuine spec ambiguity or scope changes.
