@@ -35,6 +35,11 @@ public sealed class AppFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("Balance__CargoVessel__BuildDurationSeconds", "2");
         Environment.SetEnvironmentVariable("Balance__CargoVessel__IngotCost", "20");
 
+        // Fast ship speeds so real scheduled arrivals (durable messages, ADR 0001) resolve
+        // within seconds rather than the spec §6 placeholder speeds' much longer transits.
+        Environment.SetEnvironmentVariable("Balance__Ships__ColonyShip__SpeedPerSecond", "1000");
+        Environment.SetEnvironmentVariable("Balance__Ships__CargoVessel__SpeedPerSecond", "1000");
+
         // Safety check: refuse to drop schema on a non-test database.
         var builder = new NpgsqlConnectionStringBuilder(connStr);
         if (builder.Database is not { } db || !db.Contains("test", StringComparison.OrdinalIgnoreCase))

@@ -42,4 +42,15 @@ public sealed class BalanceOptionsTests
         Assert.Equal(400m, options.ForShip(ShipType.CargoVessel).IngotCost);
         Assert.Equal(120m, options.ForShip(ShipType.CargoVessel).BuildDurationSeconds);
     }
+
+    [Fact]
+    public void ShipSpeedAndCargoDefaultsMatchSpecPlaceholders()
+    {
+        var options = new BalanceOptions();
+
+        Assert.Equal(0.05m, options.Ships.For(ShipType.ColonyShip).SpeedPerSecond);
+        Assert.Equal(0m, options.Ships.For(ShipType.ColonyShip).CargoCapacity);
+        Assert.Equal(0.10m, options.Ships.For(ShipType.CargoVessel).SpeedPerSecond);
+        Assert.Equal(500m, options.Ships.For(ShipType.CargoVessel).CargoCapacity);
+    }
 }

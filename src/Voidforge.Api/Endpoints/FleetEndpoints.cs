@@ -1,14 +1,90 @@
 using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
+using Voidforge.Api.Balance;
 using Voidforge.Api.Domain;
+using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Pagination;
+using Voidforge.Api.Travel;
+using Wolverine;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
 
 public static class FleetEndpoints
 {
+    // Launch (#49, Move only — Transport/Colonize dispatch land in #50/#51). Only the Fleet
+    // stream is touched (spec §2.3); the origin and destination planets are read for
+    // coordinates, never appended to. Arrival resolves durably via CompleteFleetArrival
+    // (ADR 0001), scheduled here and handled by CompleteFleetArrivalHandler.
+    [WolverinePost("/api/fleets/{fleetId}/missions")]
+    public static async Task<Results<Ok<FleetResponse>, BadRequest<string>, NotFound, ForbidHttpResult, Conflict<string>>> Launch(
+        Guid fleetId,
+        LaunchMissionRequest request,
+        ClaimsPrincipal principal,
+        IDocumentSession session,
+        IMessageBus bus,
+        ITravelPlanner travelPlanner,
+        IOptions<BalanceOptions> balanceOptions,
+        TimeProvider timeProvider)
+    {
+        if (request.Mission != MissionType.Move)
+        {
+            return TypedResults.BadRequest("Mission not supported yet.");   // Transport → #50, Colonize → #51
+        }
+
+        if (request.DestinationPlanetId == Guid.Empty)
+        {
+            return TypedResults.BadRequest("destinationPlanetId is required.");
+        }
+
+        var stream = await session.Events.FetchForWriting<Fleet>(fleetId);
+        var fleet = stream.Aggregate;
+        if (fleet is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (PlayerId(principal) != fleet.OwnerId)
+        {
+            return TypedResults.Forbid();
+        }
+
+        if (fleet.Status != FleetStatus.Stationed || fleet.LocationPlanetId is null)
+        {
+            return TypedResults.Conflict("Only a stationed fleet can be launched.");
+        }
+
+        if (request.DestinationPlanetId == fleet.LocationPlanetId)
+        {
+            return TypedResults.BadRequest("Destination must differ from the fleet's current location.");
+        }
+
+        var destination = await session.LoadAsync<Planet>(request.DestinationPlanetId);
+        if (destination is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // Launch touches only the Fleet stream (spec §2.3) — the origin planet is read for
+        // coordinates, never appended to.
+        var origin = await session.LoadAsync<Planet>(fleet.LocationPlanetId.Value)
+            ?? throw new InvalidOperationException($"Fleet {fleetId} is stationed at unknown planet {fleet.LocationPlanetId}.");
+
+        var now = timeProvider.GetUtcNow();
+        var balance = balanceOptions.Value;
+        var speed = fleet.GetSpeed(t => balance.Ships.For(t).SpeedPerSecond);
+        var plan = travelPlanner.Plan(origin.GetCoordinates(), destination.GetCoordinates(), speed, now);
+
+        stream.AppendOne(fleet.Depart(request.DestinationPlanetId, request.Mission, plan, now));
+        await bus.ScheduleAsync(new CompleteFleetArrival(fleetId, plan.ArrivesAt), plan.ArrivesAt);
+        await session.SaveChangesAsync();
+
+        var updated = await session.Events.FetchLatest<Fleet>(fleetId);
+        return TypedResults.Ok(FleetResponse.From(updated!));
+    }
+
     // Assembly (spec §2.3): one transaction over both streams. Ship ownership — not planet
     // ownership — is what's validated (D13): ships stranded on a foreign or unowned world
     // can still be formed into a fleet by their owner. Cargo loading arrives with #50.

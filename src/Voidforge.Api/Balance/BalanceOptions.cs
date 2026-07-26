@@ -16,6 +16,8 @@ public sealed class BalanceOptions
     public ConstructionBalance ColonyShip { get; set; } = new() { IngotCost = 1000m, BuildDurationSeconds = 300m };
     public ConstructionBalance CargoVessel { get; set; } = new() { IngotCost = 400m, BuildDurationSeconds = 120m };
 
+    public ShipsBalanceOptions Ships { get; set; } = new();
+
     public ConstructionBalance ForBuilding(BuildingType type) => type switch
     {
         BuildingType.Drill => Drill,

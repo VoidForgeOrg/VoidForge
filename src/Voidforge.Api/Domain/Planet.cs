@@ -13,6 +13,9 @@ public sealed partial class Planet
     public Guid? OwnerId { get; set; }
     public long IronOrePool { get; set; }
     public int BuildingSlotCount { get; set; }
+    public decimal X { get; set; }
+    public decimal Y { get; set; }
+    public decimal Z { get; set; }
     public ResourcePool IronOre { get; set; } = new(0, 0, 0, default);
     public ResourcePool IronIngot { get; set; } = new(0, 0, 0, default);
     public IList<BuildingSlot> Buildings { get; set; } = [];
@@ -27,7 +30,14 @@ public sealed partial class Planet
         BuildingSlotCount = @event.BuildingSlotCount;
         IronOre = new ResourcePool(0, 0, @event.IronOreStorageCapacity, default);
         IronIngot = new ResourcePool(0, 0, @event.IronIngotStorageCapacity, default);
+        X = @event.X;
+        Y = @event.Y;
+        Z = @event.Z;
     }
+
+    // Method (not a property) so it stays out of the Marten snapshot document,
+    // same rationale as the energy getters.
+    public Coordinates GetCoordinates() => new(X, Y, Z);
 
     public void Apply(PlanetColonized @event)
     {
