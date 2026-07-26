@@ -47,6 +47,9 @@ public sealed class Fleet
     {
         _ = @event;
         Status = FleetStatus.Disbanded;
+        // LocationPlanetId is intentionally left as-is: it's the fleet's last-known
+        // location, not a claim of current presence. Status is the liveness signal
+        // (#49/#50: don't read LocationPlanetId as "currently at this planet").
         Ships = [];
     }
 

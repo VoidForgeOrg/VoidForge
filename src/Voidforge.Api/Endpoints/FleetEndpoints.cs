@@ -20,7 +20,7 @@ public static class FleetEndpoints
         IDocumentSession session,
         TimeProvider timeProvider)
     {
-        if (request.ShipIds.Count == 0)
+        if (request.ShipIds is null || request.ShipIds.Count == 0)
         {
             return TypedResults.BadRequest("shipIds must not be empty.");
         }

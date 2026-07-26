@@ -77,8 +77,8 @@ Each planet maintains a **ship roster** — a list of ships stationed there and 
 
 ## Fleet Lifecycle
 
-1. **Assembly** — Ships are selected from a planet's roster. Resources are loaded onto Cargo Vessels if applicable.
-2. **Departure** — Fleet leaves the planet and enters transit. Ships are removed from the planet's roster.
+1. **Assembly** — Ships are selected from a planet's roster. Resources are loaded onto Cargo Vessels if applicable. Ships are removed from the planet's roster at assembly.
+2. **Departure** — Fleet leaves the planet and enters transit.
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
 4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
 5. **Post-mission** — The fleet stays stationed at the destination; disbanding it returns its ships to that planet's roster.

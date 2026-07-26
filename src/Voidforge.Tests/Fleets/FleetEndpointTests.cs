@@ -30,6 +30,18 @@ public sealed class FleetEndpointTests
     }
 
     [Fact]
+    public async Task AssembleWithNullShipIdsReturns400()
+    {
+        var registration = await RegisterPlayer();
+        await _host.Scenario(s =>
+        {
+            s.Post.Json(new { }).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(400);
+        });
+    }
+
+    [Fact]
     public async Task AssembleUnknownPlanetReturns404()
     {
         var registration = await RegisterPlayer();
