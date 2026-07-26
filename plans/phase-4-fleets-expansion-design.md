@@ -1,7 +1,7 @@
 # Phase 4 — Fleets & Expansion: Design Spec
 
 **Date:** 2026-07-26
-**Scope:** Fleet assembly, travel, and the three MVP missions (Move, Transport, Colonize), plus per-planet coordinates. Tracked by the Phase 4 epic; issue numbers filled in below once filed.
+**Scope:** Fleet assembly, travel, and the three MVP missions (Move, Transport, Colonize), plus per-planet coordinates. Tracked by epic [#52](https://github.com/VoidForgeOrg/VoidForge/issues/52) — issues [#48](https://github.com/VoidForgeOrg/VoidForge/issues/48) (assembly), [#49](https://github.com/VoidForgeOrg/VoidForge/issues/49) (coordinates + travel + Move), [#50](https://github.com/VoidForgeOrg/VoidForge/issues/50) (cargo + Transport), [#51](https://github.com/VoidForgeOrg/VoidForge/issues/51) (Colonize), plus prep [#40](https://github.com/VoidForgeOrg/VoidForge/issues/40).
 **Builds on:** [ADR 0001](../technical-design/adr/0001-completion-event-resolution.md) (durable scheduled messages), Phase 3's `Planet` aggregate (ship roster, `ResourcePool`, `RebaseRates`), [#39](https://github.com/VoidForgeOrg/VoidForge/issues/39) (optimistic concurrency + retry), [#44](https://github.com/VoidForgeOrg/VoidForge/issues/44) (non-regressing checkpoints).
 **Supersedes:** `technical-design/architecture.md` §4's `FleetMission : Saga` sketch (see D2).
 
@@ -203,15 +203,15 @@ Layered as in Phase 3 — logic lives in pure methods, so most coverage needs no
 
 ## 8. PR breakdown & sequencing
 
-| PR | Content | Merge gate |
-|---|---|---|
-| 0 | #40 — split `Planet.cs` into partial classes | Existing suite green |
-| A | `Fleet` aggregate, assembly & disband, fleet read endpoints | Roster round-trip integration: build ships → assemble → roster shrinks → disband → restored |
-| B | Coordinates + world-gen spread, `ShipBalance`, `ITravelPlanner`, departure/arrival, Move | Planner units; launch → in-transit with ETA → arrival → stationed at destination |
-| C | Cargo at assembly, Transport, auto + manual unload, partial delivery | Load → transport → resources moved; full-storage run leaves a remainder aboard |
-| D | Colonize, guarded claim, registration onto the same path (closes #19) | Colonize an empty planet; two-fleet race; concurrent-registration race |
+| PR | Issue | Content | Merge gate |
+|---|---|---|---|
+| 0 | #40 | Split `Planet.cs` into partial classes | Existing suite green |
+| 1 | #48 | `Fleet` aggregate, `RosterShip.OwnerId`, assembly & disband, fleet read endpoints | Roster round-trip integration: build ships → assemble → roster shrinks → disband → restored |
+| 2 | #49 | Coordinates + world-gen spread, `ShipBalance`, `ITravelPlanner`, departure/arrival, Move | Planner units; launch → in-transit with ETA → arrival → stationed at destination |
+| 3 | #50 | Cargo at assembly, Transport, auto + manual unload, partial delivery | Load → transport → resources moved; full-storage run leaves a remainder aboard |
+| 4 | #51 | Colonize, guarded claim, registration onto the same path (closes #19) | Colonize an empty planet; two-fleet race; concurrent-registration race |
 
-Dependency chain: 0 → A → B → { C, D }. C and D are independent: if D merges first, its cargo auto-unload step is simply inert (a fleet cannot carry cargo until C lands) and C's PR wires it up. Each PR updates `technical-design/domain-model.md`; B records the D2 supersession in `architecture.md` §4; A updates `game-design/fleets.md` for D6.
+Dependency chain: #40 → #48 → #49 → { #50, #51 }. The last two are independent: if #51 merges first, its cargo auto-unload step is simply inert (a fleet cannot carry cargo until #50 lands) and #50's PR wires it up. Each PR updates `technical-design/domain-model.md`; #49 records the D2 supersession in `architecture.md` §4; #48 updates `game-design/fleets.md` for D6.
 
 The arrival handler is the codebase's first cross-aggregate append (Fleet + destination Planet in one `SaveChangesAsync()`). #39 removed the local-queue parallelism throttle specifically to unblock this; both streams are fetched with `FetchForWriting`, so a contested arrival retries rather than racing.
 

@@ -4,8 +4,9 @@
 
 **Design spec:** [`phase-4-fleets-expansion-design.md`](phase-4-fleets-expansion-design.md) — full decisions, events catalog, API surface, balance placeholders.
 
-> **Tracking:** epic + per-feature issues (numbers filled in once filed).
-> Dependency order: **prep (#40) → A → B → { C, D }**.
+**Tracking:** Epic [#52](https://github.com/VoidForgeOrg/VoidForge/issues/52) · Issues [#48](https://github.com/VoidForgeOrg/VoidForge/issues/48), [#49](https://github.com/VoidForgeOrg/VoidForge/issues/49), [#50](https://github.com/VoidForgeOrg/VoidForge/issues/50), [#51](https://github.com/VoidForgeOrg/VoidForge/issues/51), prep [#40](https://github.com/VoidForgeOrg/VoidForge/issues/40)
+
+> Dependency order: **#40 → #48 → #49 → { #50, #51 }** (#50 and #51 are independent of each other).
 
 ## Decisions (settled during refinement)
 
@@ -27,7 +28,7 @@ Already filed. Done first: every feature below adds roster or storage behavior t
 
 ---
 
-### A. Fleet assembly & disband
+### #48 — Fleet assembly & disband
 **Labels:** `domain:fleets`
 
 Ships on a planet can be grouped into fleets.
@@ -35,18 +36,18 @@ Ships on a planet can be grouped into fleets.
 **Scope:**
 - `Fleet` aggregate (`Id`, `OwnerId`, `Status`, `LocationPlanetId`, `Ships`), `FleetShip`, inline snapshot registration
 - `RosterShip` gains `OwnerId`; assembly validates ship ownership, not planet ownership
-- Assemble from the planet roster; disband returns ships (refused while cargo is aboard — cargo arrives in C)
+- Assemble from the planet roster; disband returns ships (refused while cargo is aboard — cargo arrives in #50)
 - `POST /api/planets/{planetId}/fleets`, `POST /api/fleets/{fleetId}/disband`
 - `GET /api/fleets`, `GET /api/fleets/{fleetId}`, `GET /api/planets/{planetId}/fleets` (paginated per #29)
 - Fleet events: `FleetAssembled`, `FleetDisbanded`. Planet events: `ShipsRemovedFromRoster`, `ShipsAddedToRoster`
 - Updates `game-design/fleets.md` for the always-stationed arrival rule
 - Integration test: build ships → assemble → roster shrinks → disband → ships returned
 
-**Depends on:** #40 (prep), #27 (ships exist on the roster)
+**Depends on:** [#40](https://github.com/VoidForgeOrg/VoidForge/issues/40) (prep), #27 (ships exist on the roster)
 
 ---
 
-### B. Planet coordinates, travel & the Move mission
+### #49 — Planet coordinates, travel & the Move mission
 **Labels:** `domain:fleets`, `domain:planets`
 
 Fleets travel through 3D space and arrive.
@@ -61,11 +62,11 @@ Fleets travel through 3D space and arrive.
 - Records the §4 saga supersession in `technical-design/architecture.md`
 - Integration test: launch → in-transit with ETA → arrival → stationed at destination
 
-**Depends on:** A
+**Depends on:** #48
 
 ---
 
-### C. Cargo & the Transport mission
+### #50 — Cargo & the Transport mission
 **Labels:** `domain:fleets`, `domain:resources`
 
 Resources move physically between planets.
@@ -78,11 +79,11 @@ Resources move physically between planets.
 - Fleet events: `CargoLoaded`, `CargoUnloaded`. Planet events: `CargoLoadedFromStorage`, `CargoDeliveredToStorage`
 - Integration test: load → transport → resources moved; full-storage run leaves a remainder aboard
 
-**Depends on:** B
+**Depends on:** #49
 
 ---
 
-### D. Colonize mission (closes #19)
+### #51 — Colonize mission (closes #19)
 **Labels:** `domain:fleets`, `domain:planets`, `bug`
 
 Fleets claim uncolonized planets.
@@ -95,7 +96,7 @@ Fleets claim uncolonized planets.
 - Fleet events: `ColonyShipConsumed`, `ColonizationFailed`
 - Integration tests: colonize an empty planet; two fleets racing one planet; concurrent registrations
 
-**Depends on:** B. Independent of C — if D merges first, its cargo auto-unload step is inert until C lands.
+**Depends on:** #49. Independent of #50 — if #51 merges first, its cargo auto-unload step is inert until #50 lands.
 
 ---
 
