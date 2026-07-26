@@ -44,6 +44,29 @@ public sealed class FleetConcurrencyTests
     }
 
     [Fact]
+    public async Task ConcurrentLaunchesYieldExactlyOneDeparture()
+    {
+        var owner = await RegisterPlayer();
+        var beta = await RegisterPlayer();
+        var shipId = await BuildRosterShip(owner);
+        var fleet = await AssembleFleet(owner, [shipId]);
+
+        var attempts = await Task.WhenAll(
+            TryLaunch(owner, fleet.Id, beta.HomeworldId),
+            TryLaunch(owner, fleet.Id, beta.HomeworldId));
+
+        // #39 semantics: the loser either collides at commit (409 concurrency) or, if it reads
+        // the already-departed fleet, a clean 409 "only a stationed fleet can be launched".
+        // Never two 200s.
+        Assert.Equal(1, attempts.Count(status => status == 200));
+        Assert.Equal(1, attempts.Count(status => status == 409));
+
+        var fetched = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
+        Assert.Equal(FleetStatus.InTransit, fetched.Status);
+        Assert.NotNull(fetched.ArrivesAt);
+    }
+
+    [Fact]
     public async Task ConcurrentDisbandsOfTheSameFleetYieldExactlyOneSuccess()
     {
         var registration = await RegisterPlayer();
@@ -84,6 +107,20 @@ public sealed class FleetConcurrencyTests
         var result = await _host.Scenario(s =>
         {
             s.Post.Url($"/api/fleets/{fleetId}/disband");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.IgnoreStatusCode();
+        });
+
+        return result.Context.Response.StatusCode;
+    }
+
+    // Fire a Launch (Move) command and return only its status code (no auto-assert).
+    private async Task<int> TryLaunch(RegisterPlayerResponse registration, Guid fleetId, Guid destinationPlanetId)
+    {
+        var result = await _host.Scenario(s =>
+        {
+            s.Post.Json(new LaunchMissionRequest(MissionType.Move, destinationPlanetId))
+                .ToUrl($"/api/fleets/{fleetId}/missions");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.IgnoreStatusCode();
         });

@@ -29,6 +29,11 @@ public static class FleetEndpoints
         IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
+        if (!Enum.IsDefined(request.Mission))
+        {
+            return TypedResults.BadRequest("Unknown mission type.");
+        }
+
         if (request.Mission != MissionType.Move)
         {
             return TypedResults.BadRequest("Mission not supported yet.");   // Transport → #50, Colonize → #51

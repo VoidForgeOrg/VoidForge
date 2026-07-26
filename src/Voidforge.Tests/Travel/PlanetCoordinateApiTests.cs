@@ -1,4 +1,6 @@
 using Alba;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
@@ -10,13 +12,13 @@ namespace Voidforge.Tests.Travel;
 [Collection(IntegrationCollection.Name)]
 public sealed class PlanetCoordinateApiTests
 {
-    private static readonly decimal _planetSpread = new WorldGenOptions().PlanetSpread;
-
     private readonly IAlbaHost _host;
+    private readonly decimal _planetSpread;
 
     public PlanetCoordinateApiTests(AppFixture fixture)
     {
         _host = fixture.Host;
+        _planetSpread = _host.Services.GetRequiredService<IOptions<WorldGenOptions>>().Value.PlanetSpread;
     }
 
     [Fact]

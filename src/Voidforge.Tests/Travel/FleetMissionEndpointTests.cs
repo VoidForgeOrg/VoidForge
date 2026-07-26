@@ -66,6 +66,23 @@ public sealed class FleetMissionEndpointTests
     }
 
     [Fact]
+    public async Task LaunchUnknownMissionTypeReturns400()
+    {
+        var registration = await RegisterPlayer();
+
+        var result = await _host.Scenario(s =>
+        {
+            s.Post.Json(new { mission = 99, destinationPlanetId = Guid.NewGuid() })
+                .ToUrl($"/api/fleets/{Guid.NewGuid()}/missions");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(400);
+        });
+
+        var body = result.ReadAsText();
+        Assert.Contains("Unknown mission type.", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task LaunchToCurrentLocationReturns400()
     {
         var owner = await RegisterPlayer();

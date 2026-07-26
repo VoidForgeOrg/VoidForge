@@ -88,6 +88,8 @@ public sealed class Fleet
     // a matching ArrivesAt, so stale or duplicate scheduled messages are harmless.
     // Mission dispatch beyond Move (cargo unload, colonization claim) lands in #50/#51 —
     // returning a list from day one means those PRs only add elements, not reshape this.
+    // Returns Fleet-stream events only; planet-side arrival effects are produced from the
+    // Planet aggregate and appended by the handler onto the planet's own stream.
     public IReadOnlyList<object> Arrive(DateTimeOffset at)
     {
         if (Status != FleetStatus.InTransit || ArrivesAt != at)
