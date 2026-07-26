@@ -81,8 +81,13 @@ Homeworld starts with 1 Drill, 1 Refinery, 1 Generator, appended alongside `Plan
 
 - **File**: `Domain/ResourcePool.cs`
 - **Fields**: `CheckpointValue` (decimal), `Rate` (decimal, units/sec), `StorageCapacity` (decimal), `CheckpointTime` (DateTimeOffset)
-- **Methods**: `GetCurrentValue(now)` — computes `Clamp(checkpoint + rate * elapsed, 0, capacity)`; `Checkpoint(now)` — returns new instance with current value as baseline
+- **Methods**: `GetCurrentValue(now)` — computes `Clamp(checkpoint + rate * max(0, elapsed), 0, capacity)`; `Checkpoint(now)` — returns new instance with current value as baseline and `CheckpointTime = max(CheckpointTime, now)`
 - **Semantics**: Immutable record. Methods return new instances. Rate starts at 0; buildings (#10) will set rates via checkpointing.
+- **Monotonic time (#44)**: Both methods are **non-regressing** — elapsed is floored at 0 and `CheckpointTime` never moves backwards. Event `at` timestamps are *not* guaranteed non-decreasing along a `Planet` stream: a completion scheduled for `T` can commit after a player command already committed at `W > T` (durable-message poll lag per [ADR 0001](adr/0001-completion-event-resolution.md), plus the #39 `ConcurrencyException` retry backoff — together bounded at roughly 7s). Without the floor, a rewound `at` silently drains an accruing pool, and a negative rate times a negative elapsed *fabricates* resources; a regressed `CheckpointTime` then re-accrues the rewound interval on every later read. `Math.Clamp` bounds the stored value but does not make it correct.
+
+  **Residual, by design**: this makes an inversion *inert and conservative*, not order-independent. The inverted window accrues at the **pre-completion** rate, so the affected pool is under-credited by `(rate delta) × (inversion window)` — a race can never over-credit or corrupt. Exact order-independence would require retroactively re-deriving the pool from the rewound timestamp under the new rates (a rewind-and-reapply model), which is deliberately out of scope. Pinned by `PlanetEventOrderingTests`.
+
+  This holds for every caller: `Planet.RebaseRates` (invoked by all six composition-changing `Apply` methods) and `Planet.CheckpointAllResources` both go through `Checkpoint`, so the invariant is enforced in one place rather than per-handler. Note that `Apply(PlanetColonized)` seeds `CheckpointTime` via a `with` expression rather than `Checkpoint`, so colonization bootstrap (moving from `default` to `ColonizedAt`) is unaffected.
 
 Used by `Planet.IronOre` and `Planet.IronIngot`. The query endpoint computes current values at request time using `GetCurrentValue(timeProvider.GetUtcNow())` — no background ticks needed.
 
