@@ -54,7 +54,7 @@ Fleets outlive any single mission (spec D1) and are event-sourced like `Player`/
 
 **Disband** (`FleetEndpoints.Disband`, `POST /api/fleets/{fleetId}/disband`) is the mirror-image two-stream transaction: `FetchForWriting<Fleet>`, authorize (403 non-owner), guard `Status == Stationed` (409 otherwise — `Fleet.Disband` throws if called off a non-stationed fleet), then append `ShipsAddedToRoster` on the `Planet` stream (via `Planet.ReturnShipsToRoster`, fed by `Fleet.ToRosterShips()`) and `FleetDisbanded` on the `Fleet` stream, again one `SaveChangesAsync()`. `Fleet.ToRosterShips()` stamps each returned `RosterShip` with the fleet's `OwnerId` (D13), so ships disbanded onto a foreign or unowned planet's roster stay reachable — and assemblable — by their original owner, not the planet's owner.
 
-`Disbanded` is terminal: a disbanded fleet's `Ships` list is cleared and its `Status` never changes again. `GetOwnFleets`/`GetPlanetFleets` default to excluding `Disbanded` fleets (`status is null ? query.Where(f => f.Status != FleetStatus.Disbanded) : ...`); passing `?status=Disbanded` explicitly opts into fleet history.
+`Disbanded` is terminal: a disbanded fleet's `Ships` list is cleared and its `Status` never changes again. `GetOwnFleets` defaults to excluding `Disbanded` fleets (`status is null ? query.Where(f => f.Status != FleetStatus.Disbanded) : query.Where(f => f.Status == status)`); passing `?status=Disbanded` explicitly opts into fleet history. `GetPlanetFleets` always lists only `Stationed` fleets at that planet, with no status override.
 
 ### Buildings (Value Objects)
 
