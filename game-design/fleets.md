@@ -40,7 +40,7 @@ Fleets are the primary way players project power and move resources across space
 - Target must be an **uncolonized planet**.
 - On arrival, **one** Colony Ship is consumed and the planet becomes owned by the player. Any additional Colony Ships remain in the fleet.
 - After colonization, **cargo is automatically unloaded** into the new planet's storage (same partial-unload rules apply if storage is full).
-- Remaining ships are added to the new planet's ship roster.
+- The fleet remains **stationed** at the new colony; ships join the roster only via an explicit disband.
 - **If the target planet is already colonized** (by another player who arrived first): the Colonize mission **fails**. The Colony Ship is **not consumed**. The fleet idles at the planet.
 
 ### Transport
@@ -70,7 +70,7 @@ Fleets are the primary way players project power and move resources across space
 Each planet maintains a **ship roster** — a list of ships stationed there and available for fleet assembly.
 
 - Ships completed by a Shipyard are added to the **local planet's roster**.
-- When a fleet arrives and completes its mission, surviving ships are added to the **destination planet's roster**.
+- An arriving fleet always ends **stationed** at the destination — ships reach the roster only when the fleet is explicitly disbanded.
 - A fleet can be **disbanded** at any planet, returning all its ships to that planet's roster.
 - Ships on a roster can be **selected and assembled into new fleets**.
 - Ships can remain on the roster of unowned planets indefinitely.
@@ -81,4 +81,4 @@ Each planet maintains a **ship roster** — a list of ships stationed there and 
 2. **Departure** — Fleet leaves the planet and enters transit. Ships are removed from the planet's roster.
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
 4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
-5. **Post-mission** — Non-consumed ships are added to the destination planet's ship roster.
+5. **Post-mission** — The fleet stays stationed at the destination; disbanding it returns its ships to that planet's roster.

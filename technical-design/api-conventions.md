@@ -27,6 +27,8 @@ Policy: `page < 1` or `pageSize < 1` → `400 Bad Request`; `pageSize > 200` is 
 ### Deterministic order (correctness requirement)
 Pagination is only correct over a deterministic sort. Every paginated endpoint MUST apply an explicit default order before paging (never rely on storage order) and document it. Current defaults:
 - `GET /api/solar-systems` — by `Name`.
+- `GET /api/fleets` — by `AssembledAt`, then `Id`.
+- `GET /api/planets/{planetId}/fleets` — by `AssembledAt`, then `Id`.
 
 ### Producers (`Voidforge.Api/Pagination/PaginationExtensions.cs`)
 - `IQueryable<T>.ToPagedResponseAsync(parameters, selector)` — document queries; wraps Marten `ToPagedListAsync` (items + count in one round-trip).

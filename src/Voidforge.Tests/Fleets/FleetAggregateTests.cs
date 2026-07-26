@@ -6,15 +6,15 @@ namespace Voidforge.Tests.Fleets;
 
 public sealed class FleetAggregateTests
 {
-    private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _t0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static (Fleet Fleet, Guid OwnerId, Guid PlanetId, RosterShip Ship) AssembledFleet()
     {
         var ownerId = Guid.NewGuid();
         var planetId = Guid.NewGuid();
-        var ship = new RosterShip(Guid.NewGuid(), ShipType.ColonyShip, T0, ownerId);
+        var ship = new RosterShip(Guid.NewGuid(), ShipType.ColonyShip, _t0, ownerId);
         var fleet = new Fleet();
-        fleet.Apply(Fleet.Assemble(ownerId, planetId, [ship], T0.AddSeconds(10)));
+        fleet.Apply(Fleet.Assemble(ownerId, planetId, [ship], _t0.AddSeconds(10)));
         return (fleet, ownerId, planetId, ship);
     }
 
@@ -37,7 +37,7 @@ public sealed class FleetAggregateTests
         var (fleet, ownerId, _, ship) = AssembledFleet();
 
         var roster = fleet.ToRosterShips();
-        fleet.Apply(fleet.Disband(T0.AddSeconds(20)));
+        fleet.Apply(fleet.Disband(_t0.AddSeconds(20)));
 
         Assert.Equal(FleetStatus.Disbanded, fleet.Status);
         Assert.Empty(fleet.Ships);
@@ -50,8 +50,8 @@ public sealed class FleetAggregateTests
     public void DisbandTwiceThrows()
     {
         var (fleet, _, _, _) = AssembledFleet();
-        fleet.Apply(fleet.Disband(T0.AddSeconds(20)));
+        fleet.Apply(fleet.Disband(_t0.AddSeconds(20)));
 
-        Assert.Throws<InvalidOperationException>(() => fleet.Disband(T0.AddSeconds(30)));
+        Assert.Throws<InvalidOperationException>(() => fleet.Disband(_t0.AddSeconds(30)));
     }
 }
