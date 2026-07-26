@@ -56,6 +56,8 @@ frontend/
 
 **Rule**: One public type per file (enforced by Meziantou.Analyzer MA0048).
 
+**File size & responsibility (soft guideline, #40):** when a class accumulates several distinct concerns or grows past roughly 300 lines, split it — aggregates by concern via partial classes named `<Aggregate>.<Concern>.cs` (e.g. `Planet.cs` / `Planet.Energy.cs` / `Planet.Buildings.cs` / `Planet.Ships.cs`, keeping one type so Marten's `Apply` discovery and inline snapshot are unaffected), other classes by extracting focused types. Judge by responsibility, not the line count alone. Audited 2026-07-26: `Planet` split; next-largest files (`ShipEndpoints.cs` 164, `Program.cs` 117, `BuildingSpecs.cs` 47 lines) are single-concern and left as is.
+
 ## Build Configuration
 
 `Directory.Build.props` applies to all projects:
