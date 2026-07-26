@@ -10,6 +10,7 @@ using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Http;
 using Voidforge.Api.OpenApi;
+using Voidforge.Api.Travel;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
 using Wolverine.ErrorHandling;
@@ -78,6 +79,7 @@ builder.Services.AddWolverineHttp();
 builder.Services.AddExceptionHandler<ConcurrencyConflictExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ITravelPlanner, LinearTravelPlanner>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {
