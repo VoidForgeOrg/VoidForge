@@ -189,6 +189,15 @@ public static class FleetEndpoints
             return TypedResults.Conflict("Only a stationed fleet can be disbanded.");
         }
 
+        // D11 (#50): pre-validate here rather than let Fleet.Disband's own guard throw —
+        // that guard is a defensive backstop (like Planet's cargo methods), not the 409 path;
+        // without this check the endpoint previously surfaced an unhandled
+        // InvalidOperationException as a 500 instead of the spec's 409.
+        if (fleet.GetCargoLoad() > 0)
+        {
+            return TypedResults.Conflict("Cannot disband a fleet with cargo aboard.");
+        }
+
         var planetStream = await session.Events.FetchForWriting<Planet>(fleet.LocationPlanetId.Value);
         var planet = planetStream.Aggregate
             ?? throw new InvalidOperationException($"Fleet {fleetId} is stationed at unknown planet {fleet.LocationPlanetId}.");

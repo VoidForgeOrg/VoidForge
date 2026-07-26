@@ -171,6 +171,26 @@ public sealed class CargoEndpointTests
         });
     }
 
+    // Regression: FleetEndpoints.Disband previously had no endpoint-level D11 check — it relied
+    // on Fleet.Disband's own guard throwing InvalidOperationException, which nothing caught, so
+    // this surfaced as an unhandled 500 rather than the spec's 409. Found while verifying the
+    // D11 guard for this task's docs update; fixed alongside.
+    [Fact]
+    public async Task DisbandWithCargoAboardReturns409()
+    {
+        var owner = await RegisterPlayer();
+        var shipId = await BuildRosterShip(owner);
+        await WaitForStock(owner, 150m, 100m);
+        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
+
+        await _host.Scenario(s =>
+        {
+            s.Post.Url($"/api/fleets/{fleet.Id}/disband");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, owner.ApiKey);
+            s.StatusCodeShouldBe(409);
+        });
+    }
+
     [Fact]
     public async Task UnloadAtAForeignPlanetReturns403()
     {
