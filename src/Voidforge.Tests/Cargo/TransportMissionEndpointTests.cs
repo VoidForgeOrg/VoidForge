@@ -78,6 +78,51 @@ public sealed class TransportMissionEndpointTests
     }
 
     [Fact]
+    public async Task DuplicateTransportArrivalIsANoOpAndDoesNotDoubleDeliverCargo()
+    {
+        var owner = await RegisterPlayer();
+        var shipId = await BuildRosterShip(owner);
+        await WaitForStock(owner, 150m, 100m);
+        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
+        var destinationId = await ColonizeSecondPlanetForOwner(owner);   // empty storage: full headroom
+
+        var launched = await Launch(owner, fleet.Id, MissionType.Transport, destinationId);
+        Assert.NotNull(launched.ArrivesAt);
+        var arrivesAt = launched.ArrivesAt.Value;
+
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        await using (var firstSession = store.LightweightSession())
+        {
+            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), firstSession);
+        }
+
+        var afterFirst = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
+        Assert.Equal(0m, afterFirst.CargoIronOre);
+        Assert.Equal(0m, afterFirst.CargoIronIngot);
+        var destinationAfterFirst = await GetPlanetById(owner, destinationId);
+        Assert.Equal(100m, destinationAfterFirst.IronOre.CurrentValue);
+        Assert.Equal(50m, destinationAfterFirst.IronIngot.CurrentValue);
+
+        // Redelivery of the identical message (Wolverine's at-least-once delivery, ADR 0001):
+        // the fleet is no longer InTransit, so Arrive() returns no events and the handler
+        // returns before ever touching the Planet stream — must not double-credit storage.
+        await using (var secondSession = store.LightweightSession())
+        {
+            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), secondSession);
+        }
+
+        var afterDuplicate = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
+        Assert.Equal(FleetStatus.Stationed, afterDuplicate.Status);
+        Assert.Equal(destinationId, afterDuplicate.LocationPlanetId);
+        Assert.Equal(0m, afterDuplicate.CargoIronOre);
+        Assert.Equal(0m, afterDuplicate.CargoIronIngot);
+
+        var destinationAfterDuplicate = await GetPlanetById(owner, destinationId);
+        Assert.Equal(destinationAfterFirst.IronOre.CurrentValue, destinationAfterDuplicate.IronOre.CurrentValue);
+        Assert.Equal(destinationAfterFirst.IronIngot.CurrentValue, destinationAfterDuplicate.IronIngot.CurrentValue);
+    }
+
+    [Fact]
     public async Task HandlerInvokedTransportArrivalWithFullDestinationStorageLeavesCargoAboard()
     {
         var owner = await RegisterPlayer();
