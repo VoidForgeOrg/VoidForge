@@ -152,7 +152,7 @@ public static class ShipEndpoints
             .ToList();
 
         var response = ordered.ToPagedResponse(parameters,
-            s => new RosterShipResponse(s.Id, s.Type, s.CompletedAt));
+            s => new RosterShipResponse(s.Id, s.Type, s.CompletedAt, s.OwnerId));
         return TypedResults.Ok(response);
     }
 

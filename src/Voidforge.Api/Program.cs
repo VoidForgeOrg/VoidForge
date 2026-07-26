@@ -32,6 +32,7 @@ builder.Services.AddMarten(opts =>
     opts.Events.UseIdentityMapForAggregates = true;
     opts.Projections.Snapshot<Player>(SnapshotLifecycle.Inline);
     opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
+    opts.Projections.Snapshot<Fleet>(SnapshotLifecycle.Inline);
     opts.Schema.For<Player>().UniqueIndex(x => x.Name);
 })
 .UseLightweightSessions()
