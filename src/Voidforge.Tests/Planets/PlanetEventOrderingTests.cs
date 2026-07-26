@@ -1,0 +1,121 @@
+using Voidforge.Api.Domain;
+using Voidforge.Api.Domain.Events;
+using Xunit;
+
+namespace Voidforge.Tests.Planets;
+
+// #44: nothing guarantees that events appended to one Planet stream carry non-decreasing `at`.
+// A completion scheduled for T can be delivered after a player command already committed at
+// W > T (poll lag per ADR 0001 plus the #39 retry backoff), so RebaseRates runs with a backwards
+// timestamp. These tests pin the invariant that such an inversion is inert rather than corrupting.
+public sealed class PlanetEventOrderingTests
+{
+    private static Planet Homeworld(DateTimeOffset at)
+    {
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Drill, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
+        planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
+        return planet;
+    }
+
+    // Two constructions started together, completing 30s apart.
+    private static (Planet Planet, BuildingConstructionStarted Early, BuildingConstructionStarted Late) Staged(
+        DateTimeOffset at)
+    {
+        var planet = Homeworld(at);
+        var early = planet.StartConstruction(BuildingType.Drill, at, ingotCost: 300m, buildDurationSeconds: 30m);
+        planet.Apply(early);
+        var late = planet.StartConstruction(BuildingType.Generator, at, ingotCost: 600m, buildDurationSeconds: 60m);
+        planet.Apply(late);
+        return (planet, early, late);
+    }
+
+    private static void Complete(Planet planet, BuildingConstructionStarted started)
+    {
+        var events = planet.CompleteBuilding(started.SlotIndex, started.CompletesAt);
+        planet.Apply((BuildingCompleted)events[0]);
+    }
+
+    [Fact]
+    public void OutOfOrderCompletionNeverProducesNegativeElapsedOrBackwardsCheckpoint()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var (planet, early, late) = Staged(now);
+
+        // The later-scheduled completion commits first; the earlier one arrives afterwards.
+        Complete(planet, late);
+        var checkpointAfterLate = planet.IronOre.CheckpointTime;
+        Complete(planet, early);
+
+        // The rewound completion must not drag either checkpoint backwards...
+        Assert.Equal(checkpointAfterLate, planet.IronOre.CheckpointTime);
+        Assert.Equal(checkpointAfterLate, planet.IronIngot.CheckpointTime);
+
+        // ...nor leave a value that a later read re-accrues from a rewound baseline.
+        Assert.True(planet.IronOre.CheckpointValue >= 0);
+        Assert.True(planet.IronIngot.CheckpointValue >= 0);
+    }
+
+    private static (decimal Ore, decimal Ingot) BalancesAt(Planet planet, DateTimeOffset readAt) =>
+        (planet.IronOre.GetCurrentValue(readAt), planet.IronIngot.GetCurrentValue(readAt));
+
+    // Exact order-independence is NOT what this fix provides, and asserting it would be asserting
+    // something no clamp can deliver: recovering the inverted interval requires retroactively
+    // re-deriving the pool from the rewound timestamp under the post-completion rates (a
+    // rewind-and-reapply model, explicitly out of scope for #44). What the fix does guarantee is
+    // that an inversion is *inert and conservative* — the inverted window accrues at the
+    // pre-completion rate, so a race can only ever under-credit, never corrupt or over-credit.
+    [Fact]
+    public void ReverseOrderCompletionsNeverCreditMoreThanInOrder()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var (inOrder, earlyA, lateA) = Staged(now);
+        Complete(inOrder, earlyA);
+        Complete(inOrder, lateA);
+
+        var (reversed, earlyB, lateB) = Staged(now);
+        Complete(reversed, lateB);
+        Complete(reversed, earlyB);
+
+        var readAt = now.AddSeconds(120);
+        var ordered = BalancesAt(inOrder, readAt);
+        var raced = BalancesAt(reversed, readAt);
+
+        Assert.True(raced.Ore <= ordered.Ore, $"race over-credited ore: {raced.Ore} > {ordered.Ore}");
+        Assert.True(raced.Ingot <= ordered.Ingot, $"race over-credited ingots: {raced.Ingot} > {ordered.Ingot}");
+        Assert.True(raced.Ore >= 0);
+        Assert.True(raced.Ingot >= 0);
+    }
+
+    // Pins the exact residual so a future change to the ordering model shows up here as a diff
+    // rather than passing silently. The 30s inversion is deliberately far larger than production
+    // can produce (~5s durable-message poll per ADR 0001 + ~1.9s of #39 retry backoff).
+    [Fact]
+    public void ReverseOrderShortfallIsTheInvertedWindowAtThePreCompletionRate()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var (inOrder, earlyA, lateA) = Staged(now);
+        Complete(inOrder, earlyA);
+        Complete(inOrder, lateA);
+
+        var (reversed, earlyB, lateB) = Staged(now);
+        Complete(reversed, lateB);
+        Complete(reversed, earlyB);
+
+        var readAt = now.AddSeconds(120);
+
+        // The second drill lifts the net ore rate 5/s -> 15/s. In-order it applies from t=30;
+        // reversed it only applies from t=60, so the 30s window accrues 10/s short.
+        Assert.Equal(300m, BalancesAt(inOrder, readAt).Ore - BalancesAt(reversed, readAt).Ore);
+
+        // Both orderings converge once the inverted window is behind them: rates are identical
+        // from t=60 onward, so the gap is a constant offset, not a widening drift.
+        var later = now.AddSeconds(600);
+        Assert.Equal(300m, BalancesAt(inOrder, later).Ore - BalancesAt(reversed, later).Ore);
+    }
+}
