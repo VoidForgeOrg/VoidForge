@@ -110,7 +110,7 @@ public sealed partial class Planet
         var index = IndexOfShipBuild(@event.BuildId);
         var build = ShipQueue[index];
         ShipQueue.RemoveAt(index);
-        Ships.Add(new RosterShip(build.Id, build.Type, @event.CompletedAt));
+        Ships.Add(new RosterShip(build.Id, build.Type, @event.CompletedAt, OwnerId));
         RebaseRates(@event.CompletedAt);
     }
 
