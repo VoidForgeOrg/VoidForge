@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Cargo;
 
-// Task 5 (#50, spec §2.4): Transport mission launch guards + the codebase's first
+// #50 (spec §2.4): Transport mission launch guards + the codebase's first
 // cross-aggregate arrival append (Planet storage credited, Fleet cargo zeroed, one commit).
 [Collection(IntegrationCollection.Name)]
 public sealed class TransportMissionEndpointTests

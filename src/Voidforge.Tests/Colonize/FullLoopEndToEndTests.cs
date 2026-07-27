@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Colonize;
 
-// Task 6 (#51, phase-completion e2e, spec §7 item 5): the full loop the epic promises, on the
+// #51 (phase-completion e2e, spec §7 item 5): the full loop the epic promises, on the
 // REAL Wolverine scheduler (no handler-invoked shortcuts — see ClaimRaceTests/ColonizeMissionTests
 // for those), stitched together in one flight: economy (homeworld already producing) -> ships
 // (Shipyard, one Colony Ship + one Cargo Vessel) -> expand (Colonize an uncolonized planet in
