@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using JasperFx;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -16,24 +17,83 @@ namespace Voidforge.Api.Endpoints;
 
 public static class PlayerEndpoints
 {
+    // Bounded re-pick attempts for the guarded homeworld claim below (D10/#19). Three attempts
+    // gives ample headroom against genuine ties at MVP concurrency levels without looping
+    // indefinitely on a pathologically contested world.
+    private const int _maxClaimAttempts = 3;
+
     [AllowAnonymous]
     [WolverinePost("/api/players/register")]
     public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
         RegisterPlayerRequest request,
-        IDocumentSession session,
+        IDocumentStore store,
         IOptions<WorldGenOptions> worldGenOptions,
         TimeProvider timeProvider)
     {
-        var nameTaken = await session.Query<Player>()
-            .AnyAsync(p => p.Name == request.Name);
-
-        if (nameTaken)
+        // Name-taken check happens once, up front, on its own session — it doesn't participate
+        // in the per-attempt claim/retry below.
+        await using (var nameCheckSession = store.LightweightSession())
         {
-            return TypedResults.Conflict("Player name is already taken.");
+            var nameTaken = await nameCheckSession.Query<Player>()
+                .AnyAsync(p => p.Name == request.Name);
+
+            if (nameTaken)
+            {
+                return TypedResults.Conflict("Player name is already taken.");
+            }
         }
 
-        // Perf: loads all uncolonized planet IDs into memory. Replace with COUNT + random offset
-        // or database-side random selection when planet counts grow large.
+        var playerId = Guid.NewGuid();
+        var rawKey = GenerateApiKey();
+        var hashedKey = ApiKeyAuthenticationHandler.HashKey(rawKey);
+        var opts = worldGenOptions.Value;
+        var now = timeProvider.GetUtcNow();
+
+        // Guarded claim (D10/#19): the SAME shape as the fleet Colonize claim in
+        // CompleteFleetArrivalHandler/Planet.Claim — FetchForWriting, a null-owner check before
+        // appending, and optimistic concurrency on SaveChangesAsync catching a genuine tie
+        // between two racers (another registration, or a fleet's Colonize arrival) that both
+        // saw OwnerId null. Registration does NOT route through Planet.Claim itself: that
+        // factory claims bare (zero starting stores) for the fleet path, whereas registration
+        // seeds its own starting stores/buildings — the claim GUARD is shared, the claim
+        // FACTORY/payload is not. A failed SaveChangesAsync leaves a Marten session's pending
+        // unit of work unusable (it can't be selectively unwound), so each attempt opens a
+        // fresh session (TryClaimHomeworld below) — nothing from a losing attempt (Player
+        // stream, ApiKey, stale Planet append) carries over to the next.
+        for (var attempt = 0; attempt < _maxClaimAttempts; attempt++)
+        {
+            var (outcome, response) = await TryClaimHomeworld(store, playerId, rawKey, hashedKey, opts, request.Name, now);
+            switch (outcome)
+            {
+                case ClaimOutcome.Claimed:
+                    return TypedResults.Ok(response!);
+                case ClaimOutcome.NoUncolonizedPlanets:
+                    return TypedResults.StatusCode(503);
+                case ClaimOutcome.LostRace:
+                    continue;   // stale read or a genuine tie lost on commit — re-pick
+            }
+        }
+
+        return TypedResults.StatusCode(503);
+    }
+
+    private enum ClaimOutcome
+    {
+        Claimed,
+        LostRace,
+        NoUncolonizedPlanets,
+    }
+
+    // One claim attempt on its own fresh session (see the Register comment on why per-attempt
+    // sessions are required). Mirrors the fleet Colonize claim's guard shape: FetchForWriting,
+    // a null-owner check before appending, optimistic concurrency on SaveChangesAsync.
+    private static async Task<(ClaimOutcome Outcome, RegisterPlayerResponse? Response)> TryClaimHomeworld(
+        IDocumentStore store, Guid playerId, string rawKey, string hashedKey, WorldGenOptions opts, string playerName, DateTimeOffset now)
+    {
+        await using var session = store.LightweightSession();
+
+        // Perf: loads all uncolonized planet IDs into memory. Replace with COUNT + random
+        // offset or database-side random selection when planet counts grow large.
         var uncolonized = await session.Query<Planet>()
             .Where(p => p.OwnerId == null)
             .Select(p => p.Id)
@@ -41,22 +101,22 @@ public static class PlayerEndpoints
 
         if (uncolonized.Count == 0)
         {
-            return TypedResults.StatusCode(503);
+            return (ClaimOutcome.NoUncolonizedPlanets, null);
         }
 
         var homeworldId = uncolonized[Random.Shared.Next(uncolonized.Count)];
 
-        var playerId = Guid.NewGuid();
-        var rawKey = GenerateApiKey();
-        var hashedKey = ApiKeyAuthenticationHandler.HashKey(rawKey);
-        var opts = worldGenOptions.Value;
+        var stream = await session.Events.FetchForWriting<Planet>(homeworldId);
+        if (stream.Aggregate?.OwnerId is not null)
+        {
+            // Stale read: something else (another registration, or a fleet's Colonize claim)
+            // took this planet between our query and FetchForWriting. No exception involved —
+            // the caller re-picks on the next attempt.
+            return (ClaimOutcome.LostRace, null);
+        }
 
-        var now = timeProvider.GetUtcNow();
-
-        session.Events.StartStream<Player>(playerId, new PlayerRegistered(request.Name, now));
-        // Race: two concurrent registrations can colonize the same planet. Fix with optimistic
-        // concurrency (expected version) on Append. Tracked in GitHub issue.
-        session.Events.Append(homeworldId,
+        session.Events.StartStream<Player>(playerId, new PlayerRegistered(playerName, now));
+        stream.AppendMany(
             new PlanetColonized(playerId, opts.StartingIronOre, opts.StartingIronIngots, now),
             // Starting buildings: 1 Drill (ore extraction), 1 Refinery (ore->ingots),
             // 1 Generator (energy). Placed directly as Operational at the colonization instant.
@@ -70,9 +130,18 @@ public static class PlayerEndpoints
             PlayerId = playerId,
         });
 
-        await session.SaveChangesAsync();
-
-        return TypedResults.Ok(new RegisterPlayerResponse(playerId, rawKey, homeworldId));
+        try
+        {
+            await session.SaveChangesAsync();
+            return (ClaimOutcome.Claimed, new RegisterPlayerResponse(playerId, rawKey, homeworldId));
+        }
+        catch (ConcurrencyException)
+        {
+            // Lost a genuine tie on this planet's stream version — the caller re-picks on the
+            // next attempt. Nothing committed: this attempt's own session discards the queued
+            // Player/ApiKey writes along with the failed Planet append.
+            return (ClaimOutcome.LostRace, null);
+        }
     }
 
     [WolverineGet("/api/players/me")]
