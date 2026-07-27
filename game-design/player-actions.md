@@ -45,7 +45,7 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 
 ### Send Fleet on Mission
 - Assign a mission to an assembled fleet:
-  - **Colonize** — Target: uncolonized planet. Requires at least one Colony Ship.
+  - **Colonize** — Target: uncolonized planet. Requires at least one Colony Ship. On arrival, one Colony Ship is consumed and the planet becomes owned by the player; any additional Colony Ships remain in the fleet. Cargo aboard is automatically unloaded into the new colony's storage. If another player claimed the planet first, the mission fails instead: the Colony Ship is **not** consumed, cargo stays aboard, and the fleet simply idles there.
   - **Transport** — Target: own planet. Requires at least one Cargo Vessel.
   - **Move** — Target: any planet. Any fleet composition.
 - Fleet departs and enters transit.
