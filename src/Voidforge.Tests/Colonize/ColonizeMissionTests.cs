@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Colonize;
 
-// Task 3 (#51, spec §2.4): Colonize mission launch guard (Colony Ship required) + the
+// #51 (spec §2.4): Colonize mission launch guard (Colony Ship required) + the
 // guarded arrival claim (planet owned by the fleet owner, colony ship consumed, cargo
 // delivered) vs. the lost-the-race/already-owned branch (fleet idles Stationed, nothing
 // aboard changes).

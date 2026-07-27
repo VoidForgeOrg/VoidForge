@@ -21,7 +21,7 @@ public sealed class AppFixture : IAsyncLifetime
 
         // Each registration colonizes one planet, and so does a winning fleet Colonize claim.
         // Seed a large world so the suite never exhausts uncolonized planets (which would
-        // surface as 503s across unrelated tests). Bumped 40 -> 80 for Task 5 (#51): the new
+        // surface as 503s across unrelated tests). Bumped 40 -> 80 for #51's race coverage: the new
         // race coverage adds 7 registrations (5 concurrent + 2 for the two-fleet race) plus 1
         // fleet-colonize claim on top of an already wafer-thin margin — a full-suite run at 40
         // (120 planets) landed at exactly 120/120 owned, 503-ing two unrelated Buildings tests

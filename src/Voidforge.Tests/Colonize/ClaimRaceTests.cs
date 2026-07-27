@@ -11,16 +11,18 @@ using Xunit;
 
 namespace Voidforge.Tests.Colonize;
 
-// Task 4 (#51, closes #19): registration's homeworld assignment now goes through the same
+// #51 (closes #19): registration's homeworld assignment now goes through the same
 // FetchForWriting + null-owner-check guard shape as the fleet Colonize claim (Planet.Claim,
 // D10), wrapped in a bounded re-pick retry with a fresh Marten session per attempt (a failed
 // SaveChangesAsync can't be selectively unwound on a shared session). SequentialRegistration...
 // below is the mechanism smoke test: a plain, uncontested registration must still succeed
 // end-to-end exactly as before the refactor.
-// Task 5 (#51, spec §7 item 4; #50 final-review carry-over): the real concurrency coverage —
+// #51 (spec §7 item 4; #50 final-review carry-over): the real concurrency coverage —
 // two fleets racing to colonize the SAME planet (exactly one winner; exact-equality
 // conservation of the loaded cargo) and five concurrent registrations that never colonize the
-// same homeworld twice.
+// same homeworld twice. ContestedPlanetAppendLosesWithConcurrencyExceptionDeterministically
+// below (#52) strengthens the five-concurrent-registrations coverage with a deterministic,
+// non-probabilistic proof of the same version guard.
 [Collection(IntegrationCollection.Name)]
 public sealed class ClaimRaceTests
 {
@@ -65,8 +67,8 @@ public sealed class ClaimRaceTests
         var registrations = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => RegisterPlayer()));
 
         // All five requests carry distinct auto-generated names (RegisterPlayer's Guid
-        // suffix) and none may collide on a homeworld — the guarded claim (Task 4) exists
-        // precisely to make that true even when five registrations race the same
+        // suffix) and none may collide on a homeworld — the guarded claim (#51, closes #19)
+        // exists precisely to make that true even when five registrations race the same
         // uncolonized-planet pool concurrently.
         Assert.Equal(5, registrations.Select(r => r.HomeworldId).Distinct().Count());
 
@@ -75,6 +77,43 @@ public sealed class ClaimRaceTests
             var homeworld = await GetPlanetById(registration, registration.HomeworldId);
             Assert.Equal(registration.PlayerId, homeworld.OwnerId);
         }
+    }
+
+    // Deterministic counterpart to FiveConcurrentRegistrationsAllSucceedWithDistinctHomeworldsOwnedByTheirRegistrants
+    // above (#52): that test only catches a collision probabilistically (~5% odds per run
+    // against unguarded code, since five concurrent registrations rarely pick the same
+    // planet out of dozens of uncolonized candidates). This test instead forces the collision
+    // by hand — two sessions FetchForWriting the SAME stream before either saves, so both
+    // capture the same expected starting version — which deterministically proves the
+    // version guard that both D10 claim sites (Planet.Claim's fleet-Colonize call and
+    // PlayerEndpoints' registration claim) rely on. It also pins the BASE exception type:
+    // Program.cs's #39 durable-message retry policy and PlayerEndpoints' TryClaimHomeworld
+    // catch clause both key off JasperFx.ConcurrencyException, not the more specific
+    // JasperFx.Events.EventStreamUnexpectedMaxEventIdException Marten actually throws here —
+    // asserting against the base type guards against a future Marten/JasperFx upgrade
+    // narrowing (or changing) the concrete exception type from under that catch machinery.
+    [Fact]
+    public async Task ContestedPlanetAppendLosesWithConcurrencyExceptionDeterministically()
+    {
+        var registration = await RegisterPlayer();
+        var planetId = await UncolonizedPlanetId(registration);
+
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+
+        await using var sessionB = store.LightweightSession();
+        await using var sessionA = store.LightweightSession();
+
+        // Both sessions fetch before either saves, so both arm their optimistic-concurrency
+        // guard against the same starting stream version — the fetch order between A and B
+        // doesn't matter, only that neither has saved yet when the other fetches.
+        var streamB = await sessionB.Events.FetchForWriting<Planet>(planetId);
+        var streamA = await sessionA.Events.FetchForWriting<Planet>(planetId);
+
+        streamB.AppendOne(new PlanetColonized(Guid.NewGuid(), 0, 0, DateTimeOffset.UtcNow));
+        await sessionB.SaveChangesAsync();
+
+        streamA.AppendOne(new PlanetColonized(Guid.NewGuid(), 0, 0, DateTimeOffset.UtcNow));
+        await Assert.ThrowsAnyAsync<ConcurrencyException>(() => sessionA.SaveChangesAsync());
     }
 
     [Fact]
@@ -328,7 +367,7 @@ public sealed class ClaimRaceTests
         => await GetPlanetById(registration, registration.HomeworldId);
 
     // Finds an uncolonized planet through the public solar-systems listing (the real
-    // player-visible read path, per Task 5's brief) rather than a raw store query: walks
+    // player-visible read path, per #51 spec §7 item 4) rather than a raw store query: walks
     // systems in listing order and returns the first planet whose owner is null. Relies on
     // the IntegrationCollection's serialized test execution (no concurrent writer between
     // this scan and the subsequent Launch calls) — must not be copied into a parallel context.

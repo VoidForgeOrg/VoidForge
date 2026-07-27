@@ -10,7 +10,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Cargo;
 
-// Task 4 (#50, spec §2.3/§4/§5): cargo loaded at assembly + the manual unload endpoint.
+// #50 (spec §2.3/§4/§5): cargo loaded at assembly + the manual unload endpoint.
 // Amounts are chosen well under the homeworld's starting stock (500 ore / 100 ingots,
 // see WorldGenOptions) for happy paths, and comfortably below a fleet's cargo capacity but
 // above any realistic accrual for the "insufficient stored" 409.
@@ -113,7 +113,7 @@ public sealed class CargoEndpointTests
         });
     }
 
-    // D13 regression (carry-over from Task 4's review): assembling WITHOUT cargo only
+    // D13 regression (carry-over from #50's review): assembling WITHOUT cargo only
     // validates ship ownership, never planet ownership — the inverse of
     // AssembleCargoOnForeignPlanetReturns403EvenThoughShipsAreOwned above, which requests
     // cargo and is correctly refused. Ships owned by the caller but stranded on a foreign
