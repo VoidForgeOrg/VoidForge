@@ -19,9 +19,14 @@ public sealed class AppFixture : IAsyncLifetime
         // which triggers a service provider disposal race with RunJasperFxCommands in .NET 9.
         Environment.SetEnvironmentVariable("ConnectionStrings__Marten", connStr);
 
-        // Each registration colonizes one planet. Seed a large world so the suite never
-        // exhausts uncolonized planets (which would surface as 503s across unrelated tests).
-        Environment.SetEnvironmentVariable("WorldGeneration__SolarSystemCount", "40");
+        // Each registration colonizes one planet, and so does a winning fleet Colonize claim.
+        // Seed a large world so the suite never exhausts uncolonized planets (which would
+        // surface as 503s across unrelated tests). Bumped 40 -> 80 for Task 5 (#51): the new
+        // race coverage adds 7 registrations (5 concurrent + 2 for the two-fleet race) plus 1
+        // fleet-colonize claim on top of an already wafer-thin margin — a full-suite run at 40
+        // (120 planets) landed at exactly 120/120 owned, 503-ing two unrelated Buildings tests
+        // that happened to run later in the collection.
+        Environment.SetEnvironmentVariable("WorldGeneration__SolarSystemCount", "80");
 
         // Short build durations so integration tests complete quickly. The drain rate
         // (IngotCost / BuildDurationSeconds) is intentionally set to exceed the homeworld's

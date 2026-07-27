@@ -8,85 +8,115 @@ using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
 using Xunit;
 
-namespace Voidforge.Tests.Cargo;
+namespace Voidforge.Tests.Colonize;
 
-// Task 5 (#50, spec §2.4): Transport mission launch guards + the codebase's first
-// cross-aggregate arrival append (Planet storage credited, Fleet cargo zeroed, one commit).
+// Task 3 (#51, spec §2.4): Colonize mission launch guard (Colony Ship required) + the
+// guarded arrival claim (planet owned by the fleet owner, colony ship consumed, cargo
+// delivered) vs. the lost-the-race/already-owned branch (fleet idles Stationed, nothing
+// aboard changes).
 [Collection(IntegrationCollection.Name)]
-public sealed class TransportMissionEndpointTests
+public sealed class ColonizeMissionTests
 {
     private readonly IAlbaHost _host;
 
-    public TransportMissionEndpointTests(AppFixture fixture)
+    public ColonizeMissionTests(AppFixture fixture)
     {
         _host = fixture.Host;
     }
 
     [Fact]
-    public async Task LaunchTransportToForeignDestinationReturns403()
+    public async Task LaunchColonizeWithoutAColonyShipAboardReturns409()
     {
         var owner = await RegisterPlayer();
         var foreign = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
+        var shipId = await BuildRosterShip(owner, ShipType.CargoVessel);
         var fleet = await AssembleFleet(owner, [shipId]);
 
         await _host.Scenario(s =>
         {
-            s.Post.Json(new LaunchMissionRequest(MissionType.Transport, foreign.HomeworldId))
+            s.Post.Json(new LaunchMissionRequest(MissionType.Colonize, foreign.HomeworldId))
                 .ToUrl($"/api/fleets/{fleet.Id}/missions");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, owner.ApiKey);
-            s.StatusCodeShouldBe(403);
+            s.StatusCodeShouldBe(409);
         });
     }
 
     [Fact]
-    public async Task LaunchTransportToOwnDestinationReturns200AndTransitionsToInTransit()
+    public async Task LaunchColonizeWithAColonyShipAboardReturns200AndTransitionsToInTransit()
     {
         var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        var fleet = await AssembleFleet(owner, [shipId]);
-        // #51 makes a second owned planet reachable via the API (colonization) — arranged
-        // directly here since Transport's same-owner destination requirement needs one now.
-        var destinationId = await ColonizeSecondPlanetForOwner(owner);
+        var colonyShipId = await BuildRosterShip(owner, ShipType.ColonyShip);
+        var fleet = await AssembleFleet(owner, [colonyShipId]);
+        var destinationId = await UncolonizedPlanetId();
 
-        var launched = await Launch(owner, fleet.Id, MissionType.Transport, destinationId);
+        var launched = await Launch(owner, fleet.Id, MissionType.Colonize, destinationId);
 
         Assert.Equal(FleetStatus.InTransit, launched.Status);
         Assert.Equal(destinationId, launched.DestinationPlanetId);
-        Assert.Equal(MissionType.Transport, launched.Mission);
+        Assert.Equal(MissionType.Colonize, launched.Mission);
     }
 
     [Fact]
-    public async Task HandlerInvokedTransportArrivalCreditsDestinationAndZeroesFleetCargo()
+    public async Task HandlerInvokedColonizeArrivalAtAnUncolonizedPlanetClaimsItConsumesTheColonyShipAndDeliversCargo()
     {
         var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
+        var colonyShipId = await BuildRosterShip(owner, ShipType.ColonyShip);
+        var cargoVesselId = await BuildRosterShip(owner, ShipType.CargoVessel);
         await WaitForStock(owner, 150m, 100m);
-        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
-        var destinationId = await ColonizeSecondPlanetForOwner(owner);   // empty storage: full headroom
+        var fleet = await AssembleFleet(owner, [colonyShipId, cargoVesselId], new CargoRequest(100m, 50m));
+        var destinationId = await UncolonizedPlanetId();
 
-        var arrived = await LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Transport, destinationId);
+        var arrived = await LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Colonize, destinationId);
 
         Assert.Equal(FleetStatus.Stationed, arrived.Status);
         Assert.Equal(destinationId, arrived.LocationPlanetId);
+        Assert.DoesNotContain(arrived.Ships, s => s.Id == colonyShipId);   // consumed on claim
+        Assert.Contains(arrived.Ships, s => s.Id == cargoVesselId);        // untouched
         Assert.Equal(0m, arrived.CargoIronOre);
         Assert.Equal(0m, arrived.CargoIronIngot);
 
         var destination = await GetPlanetById(owner, destinationId);
+        Assert.Equal(owner.PlayerId, destination.OwnerId);
         Assert.Equal(100m, destination.IronOre.CurrentValue);
         Assert.Equal(50m, destination.IronIngot.CurrentValue);
     }
 
     [Fact]
-    public async Task DuplicateTransportArrivalIsANoOpAndDoesNotDoubleDeliverCargo()
+    public async Task HandlerInvokedColonizeArrivalAtAnAlreadyOwnedPlanetLeavesOwnerShipAndCargoIntactAndFleetStationed()
     {
         var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
+        var colonyShipId = await BuildRosterShip(owner, ShipType.ColonyShip);
+        var cargoVesselId = await BuildRosterShip(owner, ShipType.CargoVessel);
         await WaitForStock(owner, 150m, 100m);
-        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
-        var destinationId = await ColonizeSecondPlanetForOwner(owner);   // empty storage: full headroom
+        var fleet = await AssembleFleet(owner, [colonyShipId, cargoVesselId], new CargoRequest(100m, 50m));
+        var destinationId = await ColonizeSecondPlanetForOwner(owner);   // already owned before arrival
 
-        var launched = await Launch(owner, fleet.Id, MissionType.Transport, destinationId);
+        var arrived = await LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Colonize, destinationId);
+
+        Assert.Equal(FleetStatus.Stationed, arrived.Status);
+        Assert.Equal(destinationId, arrived.LocationPlanetId);
+        Assert.Contains(arrived.Ships, s => s.Id == colonyShipId);    // ship preserved: lost the race
+        Assert.Contains(arrived.Ships, s => s.Id == cargoVesselId);
+        Assert.Equal(100m, arrived.CargoIronOre);                     // cargo intact: never delivered
+        Assert.Equal(50m, arrived.CargoIronIngot);
+
+        var destination = await GetPlanetById(owner, destinationId);
+        Assert.Equal(owner.PlayerId, destination.OwnerId);   // owner unchanged
+        Assert.Equal(0m, destination.IronOre.CurrentValue);
+        Assert.Equal(0m, destination.IronIngot.CurrentValue);
+    }
+
+    [Fact]
+    public async Task DuplicateColonizeArrivalIsANoOpAndDoesNotDoubleClaimOrDoubleDeliverCargo()
+    {
+        var owner = await RegisterPlayer();
+        var colonyShipId = await BuildRosterShip(owner, ShipType.ColonyShip);
+        var cargoVesselId = await BuildRosterShip(owner, ShipType.CargoVessel);
+        await WaitForStock(owner, 150m, 100m);
+        var fleet = await AssembleFleet(owner, [colonyShipId, cargoVesselId], new CargoRequest(100m, 50m));
+        var destinationId = await UncolonizedPlanetId();
+
+        var launched = await Launch(owner, fleet.Id, MissionType.Colonize, destinationId);
         Assert.NotNull(launched.ArrivesAt);
         var arrivesAt = launched.ArrivesAt.Value;
 
@@ -97,15 +127,18 @@ public sealed class TransportMissionEndpointTests
         }
 
         var afterFirst = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
+        Assert.DoesNotContain(afterFirst.Ships, s => s.Id == colonyShipId);
         Assert.Equal(0m, afterFirst.CargoIronOre);
         Assert.Equal(0m, afterFirst.CargoIronIngot);
         var destinationAfterFirst = await GetPlanetById(owner, destinationId);
+        Assert.Equal(owner.PlayerId, destinationAfterFirst.OwnerId);
         Assert.Equal(100m, destinationAfterFirst.IronOre.CurrentValue);
         Assert.Equal(50m, destinationAfterFirst.IronIngot.CurrentValue);
 
         // Redelivery of the identical message (Wolverine's at-least-once delivery, ADR 0001):
         // the fleet is no longer InTransit, so Arrive() returns no events and the handler
-        // returns before ever touching the Planet stream — must not double-credit storage.
+        // returns before ever touching the Planet stream — must not double-claim or
+        // double-deliver cargo.
         await using (var secondSession = store.LightweightSession())
         {
             await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), secondSession);
@@ -114,54 +147,14 @@ public sealed class TransportMissionEndpointTests
         var afterDuplicate = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(FleetStatus.Stationed, afterDuplicate.Status);
         Assert.Equal(destinationId, afterDuplicate.LocationPlanetId);
+        Assert.Equal(afterFirst.Ships.Select(s => s.Id).OrderBy(id => id), afterDuplicate.Ships.Select(s => s.Id).OrderBy(id => id));
         Assert.Equal(0m, afterDuplicate.CargoIronOre);
         Assert.Equal(0m, afterDuplicate.CargoIronIngot);
 
         var destinationAfterDuplicate = await GetPlanetById(owner, destinationId);
+        Assert.Equal(destinationAfterFirst.OwnerId, destinationAfterDuplicate.OwnerId);
         Assert.Equal(destinationAfterFirst.IronOre.CurrentValue, destinationAfterDuplicate.IronOre.CurrentValue);
         Assert.Equal(destinationAfterFirst.IronIngot.CurrentValue, destinationAfterDuplicate.IronIngot.CurrentValue);
-    }
-
-    [Fact]
-    public async Task HandlerInvokedTransportArrivalWithFullDestinationStorageLeavesCargoAboard()
-    {
-        var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        await WaitForStock(owner, 150m, 100m);
-        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
-        // Colonize the destination already at its storage cap (WorldGenOptions defaults:
-        // 10000 ore / 5000 ingot) so AcceptCargoDelivery has zero headroom for either pool.
-        var destinationId = await ColonizeSecondPlanetForOwner(owner, ironOreStored: 10_000, ironIngotStored: 5_000);
-
-        var arrived = await LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Transport, destinationId);
-
-        Assert.Equal(FleetStatus.Stationed, arrived.Status);
-        Assert.Equal(destinationId, arrived.LocationPlanetId);
-        // Nothing fit: cargo stays aboard rather than being lost.
-        Assert.Equal(100m, arrived.CargoIronOre);
-        Assert.Equal(50m, arrived.CargoIronIngot);
-
-        var destination = await GetPlanetById(owner, destinationId);
-        Assert.Equal(10_000m, destination.IronOre.CurrentValue);
-        Assert.Equal(5_000m, destination.IronIngot.CurrentValue);
-    }
-
-    [Fact]
-    public async Task HandlerInvokedMoveArrivalWithCargoLeavesCargoUntouched()
-    {
-        var owner = await RegisterPlayer();
-        var beta = await RegisterPlayer();   // another colonized planet to Move to
-        var shipId = await BuildRosterShip(owner);
-        await WaitForStock(owner, 150m, 100m);
-        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(80m, 20m));
-
-        var arrived = await LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Move, beta.HomeworldId);
-
-        Assert.Equal(FleetStatus.Stationed, arrived.Status);
-        Assert.Equal(beta.HomeworldId, arrived.LocationPlanetId);
-        // Move never auto-delivers cargo (spec §2.4) — only Transport/Colonize do.
-        Assert.Equal(80m, arrived.CargoIronOre);
-        Assert.Equal(20m, arrived.CargoIronIngot);
     }
 
     private async Task<FleetResponse> Launch(
@@ -194,10 +187,26 @@ public sealed class TransportMissionEndpointTests
         return await GetJson<FleetResponse>(registration, $"/api/fleets/{fleetId}");
     }
 
-    // Test arrangement, not production code: #51 (colonization) is the API path that will
-    // make a second same-owner planet reachable; until then, appending PlanetColonized
-    // directly to an uncolonized planet's stream is how Transport's happy paths get a
-    // same-owner destination to target. Mirrors PlayerEndpoints.Register's colonization.
+    // Raw query for a planet nobody owns yet — the Colonize mission's natural destination.
+    // Relies on the IntegrationCollection's serialized test arrangement (no concurrent writer); must not be copied into a parallel context.
+    private async Task<Guid> UncolonizedPlanetId()
+    {
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        await using var session = store.LightweightSession();
+
+        var uncolonized = await session.Query<Planet>()
+            .Where(p => p.OwnerId == null)
+            .Select(p => p.Id)
+            .ToListAsync();
+
+        return uncolonized[0];
+    }
+
+    // Test arrangement, not production code: appends PlanetColonized directly to an
+    // uncolonized planet's stream so a Colonize arrival can be arranged against an
+    // ALREADY-owned destination without depending on a second player's registration.
+    // Mirrors TransportMissionEndpointTests.ColonizeSecondPlanetForOwner.
+    // Relies on the IntegrationCollection's serialized test arrangement (no concurrent writer); must not be copied into a parallel context.
     private async Task<Guid> ColonizeSecondPlanetForOwner(
         RegisterPlayerResponse owner, long ironOreStored = 0, long ironIngotStored = 0)
     {
@@ -210,7 +219,6 @@ public sealed class TransportMissionEndpointTests
             .ToListAsync();
         var planetId = uncolonized[0];
 
-        // Relies on the IntegrationCollection's serialized test arrangement (no concurrent writer); must not be copied into a parallel context.
         session.Events.Append(planetId, new PlanetColonized(owner.PlayerId, ironOreStored, ironIngotStored, DateTimeOffset.UtcNow));
         await session.SaveChangesAsync();
 
@@ -232,20 +240,26 @@ public sealed class TransportMissionEndpointTests
         return fleet;
     }
 
-    // Builds an operational shipyard, queues one CargoVessel (~2s build in the test host),
-    // and polls the roster until it appears. Returns the completed ship's id.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration)
+    // Builds an operational shipyard (once per homeworld — reused across calls) and queues
+    // one ship of the requested type, polling the roster until a ship absent from the
+    // pre-queue roster snapshot appears. Extends TransportMissionEndpointTests'
+    // CargoVessel-only helper with a ShipType parameter and before/after roster diffing so
+    // a homeworld can accumulate both a Colony Ship and a Cargo Vessel across two calls.
+    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration, ShipType type)
     {
-        await BuildOperationalShipyard(registration);
-        await QueueShip(registration, ShipType.CargoVessel);
+        var before = (await GetRoster(registration)).Items.Select(i => i.Id).ToHashSet();
+
+        await EnsureOperationalShipyard(registration);
+        await QueueShip(registration, type);
 
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
         do
         {
             var roster = await GetRoster(registration);
-            if (roster.Items.Count > 0)
+            var added = roster.Items.Where(i => !before.Contains(i.Id)).ToList();
+            if (added.Count > 0)
             {
-                return roster.Items[0].Id;
+                return added[0].Id;
             }
 
             await Task.Delay(500);
@@ -255,15 +269,19 @@ public sealed class TransportMissionEndpointTests
         throw new InvalidOperationException("Ship did not complete onto the roster in time.");
     }
 
-    private async Task BuildOperationalShipyard(RegisterPlayerResponse registration)
+    private async Task EnsureOperationalShipyard(RegisterPlayerResponse registration)
     {
-        await _host.Scenario(s =>
+        var planet = await GetPlanet(registration);
+        if (!planet.Buildings.Any(b => b.Type == BuildingType.Shipyard))
         {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
+            await _host.Scenario(s =>
+            {
+                s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
+                    .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
+                s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+                s.StatusCodeShouldBe(200);
+            });
+        }
 
         await PollUntil(
             registration,
@@ -360,7 +378,7 @@ public sealed class TransportMissionEndpointTests
     {
         var result = await _host.Scenario(s =>
         {
-            s.Post.Json(new RegisterPlayerRequest($"Transport_Test_{Guid.NewGuid():N}"))
+            s.Post.Json(new RegisterPlayerRequest($"Colonize_Test_{Guid.NewGuid():N}"))
                 .ToUrl("/api/players/register");
             s.StatusCodeShouldBe(200);
         });

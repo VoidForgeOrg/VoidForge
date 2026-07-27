@@ -190,4 +190,22 @@ public sealed class PlanetStorageMutationTests
         Assert.Equal(130m, planet.IronOre.CheckpointValue);
         Assert.Equal(_t0, planet.IronOre.CheckpointTime); // Not regressed to backwardsAt.
     }
+
+    [Fact]
+    public void DeliveryThrowsWhenIronOreAmountIsNegative()
+    {
+        var planet = PlanetWithDrill();
+
+        Assert.Throws<InvalidOperationException>(
+            () => planet.AcceptCargoDelivery(Guid.NewGuid(), -1m, 0m, _t0.AddSeconds(10)));
+    }
+
+    [Fact]
+    public void DeliveryThrowsWhenIronIngotAmountIsNegative()
+    {
+        var planet = PlanetWithDrill();
+
+        Assert.Throws<InvalidOperationException>(
+            () => planet.AcceptCargoDelivery(Guid.NewGuid(), 0m, -1m, _t0.AddSeconds(10)));
+    }
 }

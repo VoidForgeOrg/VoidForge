@@ -26,7 +26,7 @@ public sealed class SolarSystemPaginationTests
         Assert.Equal(5, page.Items.Count);
         Assert.Equal(1, page.Page);
         Assert.Equal(5, page.PageSize);
-        Assert.True(page.TotalItems >= 40);            // fixture seeds 40 systems
+        Assert.True(page.TotalItems >= 40);            // fixture seeds 80 systems
         Assert.False(page.HasPrevious);
         Assert.True(page.HasNext);
         // Deterministic order: names non-decreasing.

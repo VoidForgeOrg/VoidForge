@@ -14,11 +14,12 @@ namespace Voidforge.Api.Endpoints;
 
 public static class FleetEndpoints
 {
-    // Launch (#49 Move, #50 Transport — Colonize dispatch lands in #51). Only the Fleet
-    // stream is touched (spec §2.3); the origin and destination planets are read for
-    // coordinates (and, for Transport, ownership), never appended to. Arrival resolves
-    // durably via CompleteFleetArrival (ADR 0001), scheduled here and handled by
-    // CompleteFleetArrivalHandler — which is where Transport's cargo delivery happens.
+    // Launch (#49 Move, #50 Transport, #51 Colonize). Only the Fleet stream is touched
+    // (spec §2.3); the origin and destination planets are read for coordinates (and, for
+    // Transport, ownership), never appended to. Arrival resolves durably via
+    // CompleteFleetArrival (ADR 0001), scheduled here and handled by
+    // CompleteFleetArrivalHandler — which is where Transport's cargo delivery and
+    // Colonize's guarded claim happen.
     [WolverinePost("/api/fleets/{fleetId}/missions")]
     public static async Task<Results<Ok<FleetResponse>, BadRequest<string>, NotFound, ForbidHttpResult, Conflict<string>>> Launch(
         Guid fleetId,
@@ -65,11 +66,10 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        // Transport requires a same-owner destination (spec §2.4); re-checked on arrival —
-        // cannot fail pre-combat, but the caller (playerId) equals fleet.OwnerId here.
-        if (request.Mission == MissionType.Transport && destination.OwnerId != playerId)
+        var missionError = ValidateMissionPrecondition(request.Mission, fleet, destination, playerId);
+        if (missionError is not null)
         {
-            return TypedResults.Forbid();
+            return missionError;
         }
 
         // Launch touches only the Fleet stream (spec §2.3) — the origin planet is read for
@@ -355,14 +355,32 @@ public static class FleetEndpoints
             return TypedResults.BadRequest("Unknown mission type.");
         }
 
-        if (request.Mission == MissionType.Colonize)
-        {
-            return TypedResults.BadRequest("Mission not supported yet.");   // Colonize → #51
-        }
-
         if (request.DestinationPlanetId == Guid.Empty)
         {
             return TypedResults.BadRequest("destinationPlanetId is required.");
+        }
+
+        return null;
+    }
+
+    // Per-mission guards that need the fleet and the loaded destination (spec §2.4):
+    // Transport requires a same-owner destination (re-checked on arrival — cannot fail
+    // pre-combat, but the caller (playerId) equals fleet.OwnerId here); Colonize requires a
+    // Colony Ship aboard. No destination-ownership check for Colonize (plan decision 1):
+    // whether the destination is already owned is exactly what arrival decides (guarded
+    // claim vs. ColonizationFailed), not something launch can pre-empt. Returns null when
+    // the request is valid; kept as its own method so Launch stays within MA0051's line limit.
+    private static Results<Ok<FleetResponse>, BadRequest<string>, NotFound, ForbidHttpResult, Conflict<string>>? ValidateMissionPrecondition(
+        MissionType mission, Fleet fleet, Planet destination, Guid? playerId)
+    {
+        if (mission == MissionType.Transport && destination.OwnerId != playerId)
+        {
+            return TypedResults.Forbid();
+        }
+
+        if (mission == MissionType.Colonize && !fleet.Ships.Any(s => s.Type == ShipType.ColonyShip))
+        {
+            return TypedResults.Conflict("Colonize requires a Colony Ship.");
         }
 
         return null;
