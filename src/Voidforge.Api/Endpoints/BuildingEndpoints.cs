@@ -119,6 +119,64 @@ public static class BuildingEndpoints
         return TypedResults.NoContent();
     }
 
+    // Demolish a completed building (#72): a two-step teardown. Step 1 (here) is the IMMEDIATE
+    // shutdown — the slot flips to Demolishing and leaves the Operational set, so its energy draw,
+    // generation and production drop to zero at once (freed energy resolves any overload inside
+    // RebaseRates, the D9 cascade). A durable CompleteBuildingDemolition is scheduled for step 2, which
+    // tombstones the slot and frees it (validate-on-arrival makes redelivery safe). The slot keeps its
+    // list position throughout, so SlotIndex stays stable. 202 Accepted — the teardown is deferred.
+    // Per plan decision 4, no resume hook is wired (deferred to #83). No cancel-of-demolition.
+    [WolverinePost("/api/planets/{planetId}/buildings/{slotIndex}/demolish")]
+    public static async Task<Results<Accepted, NotFound, ForbidHttpResult, Conflict<string>>> Demolish(
+        Guid planetId,
+        int slotIndex,
+        ClaimsPrincipal principal,
+        IDocumentSession session,
+        IMessageBus bus,
+        TimeProvider timeProvider)
+    {
+        // FetchForWriting arms Marten's optimistic-concurrency guard from the fetched stream version.
+        var stream = await session.Events.FetchForWriting<Planet>(planetId);
+        var planet = stream.Aggregate;
+        if (planet is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (!IsOwner(principal, planet))
+        {
+            return TypedResults.Forbid();
+        }
+
+        // SlotIndex addresses the append-only Buildings list, so range is against the raw count.
+        if (slotIndex < 0 || slotIndex >= planet.Buildings.Count)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (planet.Buildings[slotIndex].Status is not (BuildingStatus.Operational or BuildingStatus.Halted))
+        {
+            return TypedResults.Conflict("Only a completed building can be demolished.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var events = planet.StartDemolition(slotIndex, now, BuildingSpecs.DemolitionDurationSeconds);
+        stream.AppendMany([.. events]);
+        // Schedule the teardown through the Marten transactional outbox (persisted with this
+        // transaction; survives restart). Validate-on-arrival makes redelivery safe.
+        var completesAt = now.AddSeconds((double)BuildingSpecs.DemolitionDurationSeconds);
+        await bus.ScheduleAsync(
+            new CompleteBuildingDemolition(planetId, slotIndex, completesAt),
+            completesAt);
+        await session.SaveChangesAsync();
+
+        var updated = await session.Events.FetchLatest<Planet>(planetId);
+        // The immediate shutdown changed generation/consumption/production now — reschedule all cascade
+        // checks from the post-commit state (#69/#70).
+        await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updated!, now);
+        return TypedResults.Accepted($"/api/planets/{planetId}");
+    }
+
     private static bool IsOwner(ClaimsPrincipal principal, Planet planet)
     {
         var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
