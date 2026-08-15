@@ -109,6 +109,10 @@ public sealed class StorageHaltingTests
         // Drill inflow stopped, but the still-Operational Refinery draws the full buffer at 5/s (#70).
         Assert.Equal(-5m, halted.IronOre.Rate);
 
+        // Measure the double-apply guard across a single operation (the Refinery drains the buffer at
+        // 5/s while the Drill is halted (#70), so an absolute post-load value drifts with wall-clock).
+        var oreBeforeLoad = (await _host.GetPlanet(registration)).IronOre.CurrentValue;
+
         // Load ore off the planet: freeing output storage must resume the Drill in the SAME
         // commit (D6) — no scheduled message, no wall-clock wait.
         await _host.AssembleFleet(registration, [shipId], new CargoRequest(10m, 0m));
@@ -120,18 +124,14 @@ public sealed class StorageHaltingTests
         Assert.True(
             after.IronOre.Rate > 0m,
             $"Resumed Drill should produce ore again: rate={after.IronOre.Rate}.");
-        // Storage was genuinely freed (below cap) by ~the loaded amount. The Refinery drains the buffer
-        // at 5/s while the Drill is halted (#70), so the post-load value sits a little below cap-10
-        // (buffer drain + the 10-unit load); a double-applied load (UseIdentityMapForAggregates) would
-        // land near cap-20, which the loosened floor still excludes.
         var cap = before.IronOre.StorageCapacity;
         Assert.True(
             after.IronOre.CurrentValue < cap,
             $"Ore should be below cap after loading: {after.IronOre.CurrentValue} / {cap}.");
-        Assert.True(
-            after.IronOre.CurrentValue > cap - 20m,
-            $"Ore should reflect a single 10-unit load (near cap-10, minus buffer drain), not a " +
-            $"double-applied one (~cap-20): {after.IronOre.CurrentValue} / {cap}.");
+        // Single 10-unit load + minor drain drops the pool ~10-14; a double-applied load
+        // (UseIdentityMapForAggregates hazard) would drop ~20. [8, 16) catches one, excludes two.
+        var dropAcrossLoad = oreBeforeLoad - after.IronOre.CurrentValue;
+        Assert.InRange(dropAcrossLoad, 8m, 16m);
     }
 
     [Fact]
