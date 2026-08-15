@@ -47,7 +47,7 @@ Clamping the token breaks the equality guard, the completion never fires, and th
 
 ## Residual under-credit and the post-MVP path
 
-The conservative guarantee leaves an **under-credit residual**: the inverted window accrues at the older rate. `ReverseOrderShortfallIsTheInvertedWindowAtThePreCompletionRate` pins this exactly — a 30 s inversion of a `5/s → 15/s` rate change leaves 300 units uncredited, a constant offset that does not widen. Eliminating the residual requires **rewind-and-reapply** — retroactively re-deriving the pool from the rewound timestamp under the post-transition rates — which is explicitly out of MVP scope (D14) and tracked as **the post-MVP rewind-and-reapply issue**.
+The conservative guarantee leaves an **under-credit residual**: the inverted window accrues at the older rate. `ReverseOrderShortfallIsTheInvertedWindowAtThePreCompletionRate` pins this exactly — a 30 s inversion of a `5/s → 15/s` rate change leaves 300 units uncredited, a constant offset that does not widen. Eliminating the residual requires **rewind-and-reapply** — retroactively re-deriving the pool from the rewound timestamp under the post-transition rates — which is explicitly out of MVP scope (D14) and tracked as **the post-MVP rewind-and-reapply issue (#81)**.
 
 That issue also carries a candidate refinement surfaced by the survey: a deterministic `max(planetHead, at)` clamp on the **planet-side arrival stamps only** (the `CargoDeliveredToStorage` / `PlanetColonized` effective instant — never the fleet `ArrivesAt` match token, which must stay exact). It is deferred because it subtly changes `AcceptCargoDelivery` headroom timing: headroom would be computed at the clamped-later instant rather than the true arrival instant, a behaviour change for marginal MVP benefit.
 
@@ -59,5 +59,5 @@ Accept the shipped `ResourcePool` floor + non-regressing `Checkpoint` as the MVP
 
 - The event-ordering invariant is now enforced by `ResourcePool` (type) plus this record, not by per-call-site convention. New pool-mutating `Apply` methods must checkpoint through `ResourcePool.Checkpoint`, never a raw `with` on `CheckpointTime`.
 - Scheduled-completion / arrival `at` timestamps remain **exact** (unclamped) because they are match tokens; the floor in `ResourcePool` absorbs any inversion they cause.
-- A known under-credit residual persists on inverted windows; it is bounded, conservative, and pinned by regression tests. Full correctness is deferred to the post-MVP rewind-and-reapply issue.
+- A known under-credit residual persists on inverted windows; it is bounded, conservative, and pinned by regression tests. Full correctness is deferred to the post-MVP rewind-and-reapply issue (#81).
 - No change to ADR 0001 — this ADR builds on its durable-scheduling model.
