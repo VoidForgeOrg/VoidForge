@@ -60,9 +60,11 @@ public sealed class StorageHaltingTests
 
         Assert.Equal(BuildingStatus.Halted, drillAfter.Status);
         Assert.Equal(HaltReason.OutputStorageFull, drillAfter.HaltReason);
-        // Halted Drill leaves the Operational set: ore production stops and its energy draw drops
-        // from the full 20 MW to the 5% idle floor.
-        Assert.Equal(0m, after.IronOre.Rate);
+        // Halted Drill leaves the Operational set: drill inflow stops and its energy draw drops from
+        // the full 20 MW to the 5% idle floor. The homeworld Refinery is still Operational and the ore
+        // buffer is at cap, so it now draws the buffer down at its 5/s demand (#70 buffer-drain): the
+        // net ore rate is -5 (was 0 under the old inflow-only clamp).
+        Assert.Equal(-5m, after.IronOre.Rate);
         Assert.True(
             after.Energy.ConsumptionMw < before.Energy.ConsumptionMw,
             $"Halted Drill should drop energy draw: before={before.Energy.ConsumptionMw}, after={after.Energy.ConsumptionMw}.");
@@ -104,7 +106,12 @@ public sealed class StorageHaltingTests
         var drillHalted = halted.Buildings.Single(b => b.Type == BuildingType.Drill);
         Assert.Equal(BuildingStatus.Halted, drillHalted.Status);
         Assert.Equal(HaltReason.OutputStorageFull, drillHalted.HaltReason);
-        Assert.Equal(0m, halted.IronOre.Rate);
+        // Drill inflow stopped, but the still-Operational Refinery draws the full buffer at 5/s (#70).
+        Assert.Equal(-5m, halted.IronOre.Rate);
+
+        // Measure the double-apply guard across a single operation (the Refinery drains the buffer at
+        // 5/s while the Drill is halted (#70), so an absolute post-load value drifts with wall-clock).
+        var oreBeforeLoad = (await _host.GetPlanet(registration)).IronOre.CurrentValue;
 
         // Load ore off the planet: freeing output storage must resume the Drill in the SAME
         // commit (D6) — no scheduled message, no wall-clock wait.
@@ -117,18 +124,14 @@ public sealed class StorageHaltingTests
         Assert.True(
             after.IronOre.Rate > 0m,
             $"Resumed Drill should produce ore again: rate={after.IronOre.Rate}.");
-        // Storage was genuinely freed (below cap) by ~the loaded amount. The resumed Drill
-        // accrues ore upward from cap-10, so the value only rises from there; a double-applied
-        // load (the UseIdentityMapForAggregates hazard) would instead start near cap-20, below
-        // this floor.
         var cap = before.IronOre.StorageCapacity;
         Assert.True(
             after.IronOre.CurrentValue < cap,
             $"Ore should be below cap after loading: {after.IronOre.CurrentValue} / {cap}.");
-        Assert.True(
-            after.IronOre.CurrentValue >= cap - 10m,
-            $"Ore should reflect a single 10-unit load (~cap-10), not a double-applied one: " +
-            $"{after.IronOre.CurrentValue} / {cap}.");
+        // Single 10-unit load + minor drain drops the pool ~10-14; a double-applied load
+        // (UseIdentityMapForAggregates hazard) would drop ~20. [8, 16) catches one, excludes two.
+        var dropAcrossLoad = oreBeforeLoad - after.IronOre.CurrentValue;
+        Assert.InRange(dropAcrossLoad, 8m, 16m);
     }
 
     [Fact]

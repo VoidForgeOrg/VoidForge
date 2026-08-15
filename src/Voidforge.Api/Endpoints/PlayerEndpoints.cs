@@ -161,10 +161,10 @@ public static class PlayerEndpoints
         }
     }
 
-    // Schedule the freshly-seeded homeworld's initial storage-full checks (#69), mirroring the four
+    // Schedule the freshly-seeded homeworld's initial cascade checks (#69/#70), mirroring the other
     // mutation sites (BuildingEndpoints.Place etc.). The homeworld is seeded with an Operational Drill
-    // (net ore inflow), so an otherwise idle ore pool fills to capacity and the Drill must halt on
-    // OutputStorageFull; without an initial check the Drill would just clamp and keep drawing full
+    // (net ore inflow) draining a finite deposit, so this arms both the storage-full check AND the
+    // deposit-depletion check from the outset. Without an initial check the Drill would just clamp and keep drawing full
     // energy until the player's next building/ship action reschedules. Scheduled via the bus rather
     // than the committed transaction (this is a bare store session, not the endpoint's outbox-enrolled
     // one), so a lost/duplicate initial check is self-healing: validate-on-arrival no-ops and any later
@@ -175,7 +175,7 @@ public static class PlayerEndpoints
         var seeded = await session.Events.FetchLatest<Planet>(homeworldId);
         if (seeded is not null)
         {
-            await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, homeworldId, seeded.PredictStorageDeadlines(now));
+            await StorageHaltScheduling.ScheduleAllChecksAsync(bus, homeworldId, seeded, now);
         }
     }
 

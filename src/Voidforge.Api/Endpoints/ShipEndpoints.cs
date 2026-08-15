@@ -49,10 +49,10 @@ public static class ShipEndpoints
         await session.SaveChangesAsync();
 
         var updated = await session.Events.FetchLatest<Planet>(planetId);
-        // An active ship build drains ingots, changing the ingot fill deadline — reschedule
-        // storage-full checks from the post-commit state (#69).
-        await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, planetId, updated!.PredictStorageDeadlines(now));
-        var build = updated.ShipQueue.Single(b => b.Id == buildId);
+        // An active ship build drains ingots, changing the ingot fill deadline — reschedule all
+        // cascade checks from the post-commit state (#69/#70).
+        await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updated!, now);
+        var build = updated!.ShipQueue.Single(b => b.Id == buildId);
         return TypedResults.Ok(new ShipBuildResponse(build.Id, build.Type, build.Status, build.CompletesAt));
     }
 

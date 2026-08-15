@@ -65,8 +65,8 @@ public static class BuildingEndpoints
 
         var updated = await session.Events.FetchLatest<Planet>(planetId);
         // A new UnderConstruction slot changes ingot-drain rates now, and its eventual completion
-        // changes production rates — reschedule storage-full checks from the post-commit state (#69).
-        await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, planetId, updated!.PredictStorageDeadlines(now));
-        return TypedResults.Ok(PlanetResponse.From(updated, now));
+        // changes production rates — reschedule all cascade checks from the post-commit state (#69/#70).
+        await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updated!, now);
+        return TypedResults.Ok(PlanetResponse.From(updated!, now));
     }
 }

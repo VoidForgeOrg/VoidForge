@@ -472,15 +472,15 @@ public static class FleetEndpoints
         }
     }
 
-    // After a cargo load commits (#69): the load lowered the pool and may have resumed a producer
-    // (new positive rate), so reschedule storage-full checks from the post-commit state — a
-    // resumed producer must re-halt when it refills. Mirrors the other rate-changing commit sites.
+    // After a cargo load commits (#69/#70): the load lowered the pool and may have resumed a producer
+    // (new positive rate), so reschedule all cascade checks from the post-commit state — a resumed
+    // producer must re-halt when it refills, and freeing/draining a pool shifts the depletion and
+    // buffer-empty deadlines too. Mirrors the other rate-changing commit sites.
     private static async Task RescheduleStorageFullChecks(
         IDocumentSession session, IMessageBus bus, Guid planetId, DateTimeOffset now)
     {
         var updatedPlanet = await session.Events.FetchLatest<Planet>(planetId);
-        await StorageHaltScheduling.ScheduleDeadlinesAsync(
-            bus, planetId, updatedPlanet!.PredictStorageDeadlines(now));
+        await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updatedPlanet!, now);
     }
 
     private static Guid? PlayerId(ClaimsPrincipal principal)

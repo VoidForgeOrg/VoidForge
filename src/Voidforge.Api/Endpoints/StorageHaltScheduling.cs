@@ -20,4 +20,28 @@ public static class StorageHaltScheduling
                 deadline.At);
         }
     }
+
+    // Unified scheduling for every rate-changing MUTATION site (#70): arm ALL THREE cascade checks
+    // from one fresh post-commit planet — storage-full (CheckStorageFull, per pool), ore-deposit
+    // depletion (CheckPoolDepleted, when the deposit is draining) and refinery buffer-empty
+    // (CheckInputStarved, when the ore buffer is draining). The per-kind ScheduleDeadlinesAsync above
+    // stays for the check handlers' OWN linear self-reschedule; only the mutation sites call this so
+    // the depletion → drill-halt → refinery-starvation cascade fires in production without a wall clock.
+    public static async Task ScheduleAllChecksAsync(
+        IMessageBus bus, Guid planetId, Planet planet, DateTimeOffset now)
+    {
+        await ScheduleDeadlinesAsync(bus, planetId, planet.PredictStorageDeadlines(now));
+
+        var depletion = planet.PredictDepletionDeadline(now);
+        if (depletion is not null)
+        {
+            await bus.ScheduleAsync(new CheckPoolDepleted(planetId, depletion.At), depletion.At);
+        }
+
+        var bufferEmpty = planet.PredictBufferEmpty(now);
+        if (bufferEmpty is not null)
+        {
+            await bus.ScheduleAsync(new CheckInputStarved(planetId, bufferEmpty.At), bufferEmpty.At);
+        }
+    }
 }

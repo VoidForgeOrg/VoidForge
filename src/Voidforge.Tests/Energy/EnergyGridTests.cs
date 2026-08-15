@@ -48,8 +48,9 @@ public sealed class EnergyGridTests
         await Task.Delay(1000);
         var second = await _host.GetPlanet(registration);
 
-        // Both pools rise (refineries convert the inflow, not the stored buffer, so net ore
-        // stays positive); ingots climb at twice the effective ore consumption.
+        // Both pools rise: here drill inflow (10) exceeds refinery demand (5), so the buffer is never
+        // drawn down (#70 buffer-drain only kicks in when demand outstrips inflow) and net ore stays
+        // positive; ingots climb at twice the effective ore consumption.
         Assert.True(second.IronIngot.CurrentValue > first.IronIngot.CurrentValue,
             $"Expected ingots to rise: {first.IronIngot.CurrentValue} -> {second.IronIngot.CurrentValue}");
         Assert.True(second.IronOre.CurrentValue > first.IronOre.CurrentValue,
