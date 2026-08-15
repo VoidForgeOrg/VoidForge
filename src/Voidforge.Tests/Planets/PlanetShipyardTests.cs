@@ -13,7 +13,7 @@ public sealed class PlanetShipyardTests
     private static Planet PlanetWithShipyards(DateTimeOffset at, int shipyards)
     {
         var planet = new Planet();
-        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 10, 10000, 5000));
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 10, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
         // A generator so shipyards have power, plus the requested operational shipyards.
         planet.Apply(new BuildingPlaced(BuildingType.Generator, at));

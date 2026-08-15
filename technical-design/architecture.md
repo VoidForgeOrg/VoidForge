@@ -144,7 +144,7 @@ Each core game entity is a **Marten event stream**:
 | Entity | Stream Identity | Example Events |
 |--------|----------------|----------------|
 | Planet | `Guid` (PlanetId) | `BuildingStarted`, `BuildingCompleted`, `ResourcesDepleted`, `DrillHalted`, `EnergyRebalanced`, `ProductionRateChanged` |
-| Fleet Mission | `Guid` (FleetMissionId) | Modeled as a **Wolverine Saga** rather than a raw event stream (see Section 4) |
+| Fleet | `Guid` (FleetId) | `FleetAssembled`, `FleetDeparted`, `FleetArrived`, `CargoLoaded`/`CargoUnloaded` (#50), `FleetDisbanded` |
 | Player | `Guid` (PlayerId) | `PlayerRegistered`, `ApiKeyGenerated` |
 
 Events are stored in `mt_events` (JSONB data + metadata) and `mt_streams` (stream state). Using `EventAppendMode.Quick` for ~40-50% better write performance (acceptable trade-off: `IEvent.Version` unavailable in inline projections, but we use `IRevisioned` on aggregates instead).
@@ -156,6 +156,7 @@ Each event stream has an **inline snapshot projection** — a persisted document
 ```csharp
 opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
 opts.Projections.Snapshot<Player>(SnapshotLifecycle.Inline);
+opts.Projections.Snapshot<Fleet>(SnapshotLifecycle.Inline);
 ```
 
 These snapshots serve as both the read model (API queries load them directly) and the checkpoint for lazy calculation (see Section 5).
@@ -234,7 +235,7 @@ A background `DurabilityAgent` polls the outbox for due messages and dispatches 
 | Building completion | Player starts construction | `CompleteBuildingConstruction { PlanetId, SlotIndex, CompletesAt }` scheduled at `now + buildDuration`; resolves to the `BuildingCompleted { SlotIndex, CompletedAt }` stream event |
 | Ship completion | Shipyard starts building | `CompleteShipConstruction { PlanetId, BuildId, CompletesAt }` scheduled at `CompletesAt`; resolves to the `ShipCompleted { BuildId, CompletedAt }` stream event |
 | Resource depletion | Drill starts mining | `ResourceDepleted { PlanetId, ResourceType }` scheduled at `poolSize / extractionRate` |
-| Fleet arrival | Fleet departs | Handled by Wolverine Saga `TimeoutMessage` (see below) |
+| Fleet arrival | Fleet departs | `CompleteFleetArrival { FleetId, ArrivesAt }` scheduled at the `TravelPlan.ArrivesAt` computed on departure (#49); resolves via the thin `CompleteFleetArrivalHandler` calling pure, validate-on-arrival `Fleet.Arrive` → `FleetArrived` (ADR 0001, D2 — **not** the Saga sketched below, which is historical; see domain-model.md → Fleet) |
 | Storage full | Production rate changes | `StorageFull { PlanetId, ResourceType }` scheduled at `(capacity - current) / rate` |
 
 > Phase 3 (#26) introduces the first durable scheduled-message completion (`CompleteBuildingConstruction` → `BuildingCompleted`), following ADR 0001; #27 reuses the pattern for ships.
@@ -248,11 +249,13 @@ Multiple paths append to one `Planet` event stream concurrently: the scheduled c
 - **Scheduled completions** let the `ConcurrencyException` propagate to a Wolverine retry policy — `opts.OnException<ConcurrencyException>().RetryWithCooldown(50ms, 100ms, 250ms, 500ms, 1s)` in `Program.cs`. The handler reloads the committed snapshot and re-runs the pure method; validate-on-arrival makes re-application a no-op, so a collided completion is retried to success and **never dropped**. The ladder is generous enough that exhausting it (→ dead-letter) is effectively impossible for these rare transient collisions at single-node scale.
 - **HTTP commands** map the conflict to **409 Conflict** via `ConcurrencyConflictExceptionHandler` (an ASP.NET `IExceptionHandler`; `AddExceptionHandler` + `AddProblemDetails` + `UseExceptionHandler`). The mapping lives in the pipeline, not the endpoint, because Wolverine's transactional middleware (`AutoApplyTransactions`) issues the `SaveChangesAsync` *after* the endpoint method returns — so the `ConcurrencyException` is thrown outside any endpoint-level `try/catch`, and the whole append + outbox transaction rolls back atomically.
 
-This is strictly more general than the previous stopgap, so the `opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1))` throttle introduced by #27 has been **removed**: optimistic concurrency also covers the HTTP and cross-message-type (`CompleteBuildingConstruction` vs `CompleteShipConstruction`) races the throttle never touched, and subsumes the **logical double-start** it guarded (a retry loser reloads committed state and sees the slot already taken). Removing it restores local-queue parallelism ahead of Phase 4's fleet sagas (cross-aggregate appends). Regression coverage: `SameStreamConcurrencyTests` (HTTP-vs-scheduled eventual consistency; concurrent-command 409-not-500).
+This is strictly more general than the previous stopgap, so the `opts.Policies.AllLocalQueues(x => x.MaximumParallelMessages(1))` throttle introduced by #27 has been **removed**: optimistic concurrency also covers the HTTP and cross-message-type (`CompleteBuildingConstruction` vs `CompleteShipConstruction`) races the throttle never touched, and subsumes the **logical double-start** it guarded (a retry loser reloads committed state and sees the slot already taken). Removing it restores local-queue parallelism ahead of Phase 4's fleet travel (cross-aggregate appends across the `Planet` and `Fleet` streams) — which, per the #49 supersession below, landed as the same schedule-and-validate-on-arrival pattern rather than the saga anticipated here. Regression coverage: `SameStreamConcurrencyTests` (HTTP-vs-scheduled eventual consistency; concurrent-command 409-not-500).
 
 > The `EventAppendMode.Quick` write-performance trade-off is described in §3 ("Event Streams"). `FetchForWriting` layers an optimistic-concurrency guard back on top of Quick appends without reverting to Rich mode.
 
 ### Fleet Missions as Wolverine Sagas
+
+> **Superseded (2026-07-26, #49):** Fleet arrival is implemented as a durable scheduled message resolved by a thin handler + pure aggregate method (ADR 0001; spec D2) — not the Saga sketched below, which is retained for history. See domain-model.md → Fleet.
 
 Fleet missions have a lifecycle (departure → transit → arrival → post-mission) that maps naturally to a **Wolverine Saga**. The saga persists its state as a Marten document and uses `TimeoutMessage` for the arrival event:
 
@@ -304,7 +307,7 @@ public class FleetMission : Saga
 
 When a scheduled event becomes invalid (e.g., building cancelled, fleet recalled):
 
-- **Fleet cancellation:** The saga handles a `CancelFleet` message, creates a return journey saga, and calls `MarkCompleted()`. If the original `FleetArrived` message fires after completion, the `NotFound` handler safely ignores it.
+- **Fleet cancellation (not yet implemented; sketch predates #49):** as originally sketched, a saga would handle a `CancelFleet` message, create a return-journey saga, and call `MarkCompleted()`, with the `NotFound` handler safely ignoring a `FleetArrived` that fires after completion. Now that fleets are a plain event-sourced aggregate (no saga — see the #49 supersession above), an eventual "recall fleet" feature would instead follow the established pattern: append a domain event on the `Fleet` stream and let the already-scheduled `CompleteFleetArrival` fire and no-op via `Fleet.Arrive`'s validate-on-arrival check, exactly like a stale/duplicate arrival today.
 - **Building/ship cancellation:** The handler appends a cancellation event (e.g., `BuildingCancelled`). When the `BuildingCompleted` message fires, the handler loads the planet aggregate, checks the building's status, and no-ops if cancelled.
 - **Resource depletion rescheduling:** When production rates change (new drill, energy rebalance), the handler calculates the new depletion time and schedules a new message. The old message fires but the handler detects the stale checkpoint and ignores it.
 

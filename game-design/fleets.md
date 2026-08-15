@@ -25,11 +25,11 @@ Fleets are the primary way players project power and move resources across space
 - Purpose: **Transport resources** between planets.
 - Each Cargo Vessel has a **fixed cargo capacity**.
 - A fleet's total cargo capacity is the **sum of its individual Cargo Vessels**.
-- Resources are **bound to individual ships** — if a ship is destroyed, the resources it carries are lost (or left as wreckage).
+- In MVP, cargo is tracked as **fleet-level totals** — resources are not bound to individual ships (see the Post-MVP note below).
 - Built at a Shipyard from Iron Ingots.
 - Has a travel speed.
 
-> **Design Intent:** Tying cargo to individual ships means combat has real economic consequences. Losing part of a fleet means losing the resources those specific ships were carrying.
+> **Post-MVP Note:** Once combat lands, cargo will be bound to individual ships so that combat has real economic consequences — losing part of a fleet means losing the resources those specific ships were carrying. With no combat in MVP, fleet-level totals are sufficient.
 
 > **Post-MVP Note:** Scout Vessels (cheap, fast exploration ships) and scouting/espionage mechanics are planned for future iterations.
 
@@ -40,7 +40,7 @@ Fleets are the primary way players project power and move resources across space
 - Target must be an **uncolonized planet**.
 - On arrival, **one** Colony Ship is consumed and the planet becomes owned by the player. Any additional Colony Ships remain in the fleet.
 - After colonization, **cargo is automatically unloaded** into the new planet's storage (same partial-unload rules apply if storage is full).
-- Remaining ships are added to the new planet's ship roster.
+- The fleet remains **stationed** at the new colony; ships join the roster only via an explicit disband.
 - **If the target planet is already colonized** (by another player who arrived first): the Colonize mission **fails**. The Colony Ship is **not consumed**. The fleet idles at the planet.
 
 ### Transport
@@ -63,22 +63,22 @@ Fleets are the primary way players project power and move resources across space
 
 - Travel is **linear** — fleets move in a straight line from origin to destination.
 - Travel time is based on the **3D coordinate distance** between the two planets and the **fleet's speed** (determined by its slowest ship).
-- Fleets in transit **can be cancelled**. A cancelled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back. (e.g., if cancelled 5 hours into a 12-hour trip, the return takes 5 hours.)
+- Fleets in transit **can be cancelled** *(planned MVP scope — not yet implemented as of Phase 4)*. A cancelled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back. (e.g., if cancelled 5 hours into a 12-hour trip, the return takes 5 hours.)
 
 ## Ship Roster
 
 Each planet maintains a **ship roster** — a list of ships stationed there and available for fleet assembly.
 
 - Ships completed by a Shipyard are added to the **local planet's roster**.
-- When a fleet arrives and completes its mission, surviving ships are added to the **destination planet's roster**.
+- An arriving fleet always ends **stationed** at the destination — ships reach the roster only when the fleet is explicitly disbanded.
 - A fleet can be **disbanded** at any planet, returning all its ships to that planet's roster.
 - Ships on a roster can be **selected and assembled into new fleets**.
 - Ships can remain on the roster of unowned planets indefinitely.
 
 ## Fleet Lifecycle
 
-1. **Assembly** — Ships are selected from a planet's roster. Resources are loaded onto Cargo Vessels if applicable.
-2. **Departure** — Fleet leaves the planet and enters transit. Ships are removed from the planet's roster.
+1. **Assembly** — Ships are selected from a planet's roster. Resources are loaded onto Cargo Vessels if applicable. Ships are removed from the planet's roster at assembly.
+2. **Departure** — Fleet leaves the planet and enters transit.
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
 4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
-5. **Post-mission** — Non-consumed ships are added to the destination planet's ship roster.
+5. **Post-mission** — The fleet stays stationed at the destination; disbanding it returns its ships to that planet's roster.

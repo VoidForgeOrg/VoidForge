@@ -21,7 +21,7 @@ internal sealed class ConcurrencyConflictExceptionHandler : IExceptionHandler
 
         httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
         await httpContext.Response.WriteAsJsonAsync(
-            new { detail = "Concurrent modification of this planet; please retry." },
+            new { detail = "Concurrent modification of this resource; please retry." },
             cancellationToken);
         return true;
     }

@@ -9,6 +9,7 @@ public sealed class WorldGenOptions
     public long IronOreStorageCapacity { get; set; } = 10000;
     public long IronIngotStorageCapacity { get; set; } = 5000;
     public decimal CoordinateRange { get; set; } = 1000;
+    public decimal PlanetSpread { get; set; } = 20m;
     public long StartingIronOre { get; set; } = 500;
     public long StartingIronIngots { get; set; } = 100;
 }

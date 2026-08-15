@@ -45,7 +45,7 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 
 ### Send Fleet on Mission
 - Assign a mission to an assembled fleet:
-  - **Colonize** — Target: uncolonized planet. Requires at least one Colony Ship.
+  - **Colonize** — Target: uncolonized planet. Requires at least one Colony Ship. On arrival, one Colony Ship is consumed and the planet becomes owned by the player; any additional Colony Ships remain in the fleet. Cargo aboard is automatically unloaded into the new colony's storage. If another player claimed the planet first, the mission fails instead: the Colony Ship is **not** consumed, cargo stays aboard, and the fleet simply idles there.
   - **Transport** — Target: own planet. Requires at least one Cargo Vessel.
   - **Move** — Target: any planet. Any fleet composition.
 - Fleet departs and enters transit.
@@ -53,11 +53,12 @@ This is the complete list of actions a player can perform in Voidforge MVP. Ever
 ### Cancel Fleet in Transit
 - Cancel a fleet that is currently traveling.
 - The fleet turns around and returns to its origin, taking the same time it has already traveled.
+- **Status:** Planned (MVP scope) — not yet implemented as of Phase 4; the API does not expose this action yet (see `technical-design/architecture.md` §4).
 
 ### Disband Fleet
 - Disband a fleet stationed at a planet.
 - All ships return to the planet's ship roster.
-- Any cargo remains on the ships until manually unloaded (if applicable).
+- **Refused if the fleet is still carrying cargo** — unload it first (Trigger Unload, below). Trigger Unload only works at planets you own, so a cargo-bearing fleet stationed at an unowned planet must first Move back to an owned planet and unload there before it can be disbanded.
 
 ### Trigger Unload
 - Unload cargo from a fleet stationed at an owned planet.

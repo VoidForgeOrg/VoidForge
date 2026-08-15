@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, phase-3]
+    branches: [main, phase-3, phase-4]
 
 env:
   DOTNET_NOLOGO: true

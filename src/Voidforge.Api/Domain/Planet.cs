@@ -2,7 +2,10 @@ using Voidforge.Api.Domain.Events;
 
 namespace Voidforge.Api.Domain;
 
-public sealed class Planet
+// Split by concern into partial files (#40): Planet.cs (state + rate engine),
+// Planet.Energy.cs, Planet.Buildings.cs, Planet.Ships.cs. Marten still sees one
+// aggregate type, so Apply discovery and the inline snapshot are unaffected.
+public sealed partial class Planet
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -10,6 +13,9 @@ public sealed class Planet
     public Guid? OwnerId { get; set; }
     public long IronOrePool { get; set; }
     public int BuildingSlotCount { get; set; }
+    public decimal X { get; set; }
+    public decimal Y { get; set; }
+    public decimal Z { get; set; }
     public ResourcePool IronOre { get; set; } = new(0, 0, 0, default);
     public ResourcePool IronIngot { get; set; } = new(0, 0, 0, default);
     public IList<BuildingSlot> Buildings { get; set; } = [];
@@ -24,8 +30,21 @@ public sealed class Planet
         BuildingSlotCount = @event.BuildingSlotCount;
         IronOre = new ResourcePool(0, 0, @event.IronOreStorageCapacity, default);
         IronIngot = new ResourcePool(0, 0, @event.IronIngotStorageCapacity, default);
+        X = @event.X;
+        Y = @event.Y;
+        Z = @event.Z;
     }
 
+    // Method (not a property) so it stays out of the Marten snapshot document,
+    // same rationale as the energy getters.
+    public Coordinates GetCoordinates() => new(X, Y, Z);
+
+    // Raw `with` (not the non-regressing Checkpoint) is safe here specifically: a claimable
+    // planet's pools are zero-rate/zero-value (nothing has ever accrued, so there is nothing
+    // to lose by overwriting CheckpointTime outright), and homeworld seeding passes its
+    // starting stores explicitly via this same event rather than deriving them from an
+    // in-flight accrual. Fleet colonization always claims through Claim (zero stores, §2.4);
+    // registration's richer seeded colonization is the other caller of this event/Apply.
     public void Apply(PlanetColonized @event)
     {
         OwnerId = @event.OwnerId;
@@ -33,23 +52,21 @@ public sealed class Planet
         IronIngot = IronIngot with { CheckpointValue = @event.IronIngotStored, CheckpointTime = @event.ColonizedAt };
     }
 
-    // Validates the slot invariant against current state and produces the event to append.
-    // Does not mutate — the resulting BuildingPlaced is applied via Apply once persisted.
-    // Ownership/authorization is an application concern and stays at the endpoint.
-    public BuildingPlaced PlaceBuilding(BuildingType type, DateTimeOffset placedAt)
+    // The D10 null-owner assertion (spec §2.4): guards the claim itself. A genuine race
+    // between two fleets (or a fleet and registration) is resolved one level up by
+    // FetchForWriting + ConcurrencyException on the loser's commit, which the #39 retry
+    // policy replays whole — the retry re-reads a now-owned planet and lands here again,
+    // this time throwing. Zero starting stores (spec §2.4): a fleet-colonized planet starts
+    // bare; registration's homeworld seeding uses PlanetColonized directly with its own
+    // starting stores, not this factory.
+    public PlanetColonized Claim(Guid ownerId, DateTimeOffset at)
     {
-        if (Buildings.Count >= BuildingSlotCount)
+        if (OwnerId is not null)
         {
-            throw new NoFreeSlotsException("No available building slots on this planet.");
+            throw new InvalidOperationException("Planet is already colonized.");
         }
 
-        return new BuildingPlaced(type, placedAt);
-    }
-
-    public void Apply(BuildingPlaced @event)
-    {
-        Buildings.Add(new BuildingSlot(@event.BuildingType, BuildingStatus.Operational));
-        RebaseRates(@event.PlacedAt);
+        return new PlanetColonized(ownerId, 0, 0, at);
     }
 
     // Pool rates are a pure function of the operational building composition and the
@@ -93,253 +110,86 @@ public sealed class Planet
         };
     }
 
-    // Player-initiated placement: validates a free slot and returns the start event carrying
-    // the derived drain + completion time. Pure — no mutation until Apply. Balance values are
-    // passed in (from the endpoint's IOptions<BalanceOptions>) so replay needs no config.
-    public BuildingConstructionStarted StartConstruction(
-        BuildingType type, DateTimeOffset now, decimal ingotCost, decimal buildDurationSeconds)
-    {
-        if (Buildings.Count >= BuildingSlotCount)
-        {
-            throw new NoFreeSlotsException("No available building slots on this planet.");
-        }
-
-        var drain = buildDurationSeconds <= 0 ? 0m : ingotCost / buildDurationSeconds;
-        return new BuildingConstructionStarted(
-            SlotIndex: Buildings.Count,
-            BuildingType: type,
-            StartedAt: now,
-            CompletesAt: now.AddSeconds((double)buildDurationSeconds),
-            DrainPerSecond: drain);
-    }
-
-    public void Apply(BuildingConstructionStarted @event)
-    {
-        Buildings.Add(new BuildingSlot(
-            @event.BuildingType,
-            BuildingStatus.UnderConstruction,
-            @event.CompletesAt,
-            @event.DrainPerSecond));
-        RebaseRates(@event.StartedAt);
-    }
-
-    // Completion is resolved by a durable scheduled message (ADR 0001). Pure + idempotent:
-    // returns empty (no-op) unless the slot is still UnderConstruction with a matching
-    // CompletesAt — this is the "validate on arrival" guard for stale/superseded messages.
-    // Returns a list because a completing Shipyard will also start queued ship builds (#27).
-    public IReadOnlyList<object> CompleteBuilding(int slotIndex, DateTimeOffset at)
-    {
-        if (slotIndex < 0 || slotIndex >= Buildings.Count)
-        {
-            return [];
-        }
-
-        var slot = Buildings[slotIndex];
-        if (slot.Status != BuildingStatus.UnderConstruction || slot.CompletesAt != at)
-        {
-            return [];
-        }
-
-        var events = new List<object> { new BuildingCompleted(slotIndex, at) };
-        if (slot.Type == BuildingType.Shipyard)
-        {
-            // This shipyard becomes operational at `at`, raising capacity by ParallelBuilds.
-            var newCapacity = BuildingSpecs.ShipyardParallelBuilds * (OperationalShipyardCount() + 1);
-            events.AddRange(StartQueuedBuilds(newCapacity - ActiveShipBuildCount(), at));
-        }
-
-        return events;
-    }
-
-    public void Apply(BuildingCompleted @event)
-    {
-        var slot = Buildings[@event.SlotIndex];
-        Buildings[@event.SlotIndex] = slot with
-        {
-            Status = BuildingStatus.Operational,
-            CompletesAt = null,
-            ConstructionDrainPerSecond = 0m,
-        };
-        RebaseRates(@event.CompletedAt);
-    }
-
-    private int OperationalShipyardCount() => Buildings
-        .Count(b => b.Status == BuildingStatus.Operational && b.Type == BuildingType.Shipyard);
-
-    private int ActiveShipBuildCount() => ShipQueue.Count(b => b.Status == ShipBuildStatus.Active);
-
-    private int ShipyardCapacity() => BuildingSpecs.ShipyardParallelBuilds * OperationalShipyardCount();
-
-    // Emits ShipConstructionStarted for the first `freeSlots` queued builds (FIFO by QueuedAt),
-    // each completing at `at + its stored duration`. Pure — reads current queue state only.
-    private List<ShipConstructionStarted> StartQueuedBuilds(int freeSlots, DateTimeOffset at)
-    {
-        if (freeSlots <= 0)
-        {
-            return [];
-        }
-
-        return ShipQueue
-            .Where(b => b.Status == ShipBuildStatus.Queued)
-            .OrderBy(b => b.QueuedAt)
-            .Take(freeSlots)
-            .Select(b => new ShipConstructionStarted(b.Id, at, at.AddSeconds((double)b.BuildDurationSeconds)))
-            .ToList();
-    }
-
-    // Enqueue is unconditional (D6). If capacity is free the build starts immediately; otherwise
-    // it waits. buildId is supplied by the endpoint (Guid.NewGuid) so the method stays pure.
-    public IReadOnlyList<object> QueueShip(
-        ShipType type, DateTimeOffset now, Guid buildId, decimal drainPerSecond, decimal buildDurationSeconds)
-    {
-        var events = new List<object>
-        {
-            new ShipConstructionQueued(buildId, type, now, drainPerSecond, buildDurationSeconds),
-        };
-
-        // Invariant: builds never wait while capacity is free, so if there is room the build we
-        // just queued is the one that starts.
-        if (ActiveShipBuildCount() < ShipyardCapacity())
-        {
-            events.Add(new ShipConstructionStarted(buildId, now, now.AddSeconds((double)buildDurationSeconds)));
-        }
-
-        return events;
-    }
-
-    // Durable-message resolution (ADR 0001). Validate-on-arrival: empty (no-op) unless the build
-    // is still Active with a matching CompletesAt. On success completes the ship and auto-starts
-    // the next queued build (one active slot freed).
-    public IReadOnlyList<object> CompleteShipBuild(Guid buildId, DateTimeOffset at)
-    {
-        var build = ShipQueue.FirstOrDefault(b => b.Id == buildId);
-        if (build is null || build.Status != ShipBuildStatus.Active || build.CompletesAt != at)
-        {
-            return [];
-        }
-
-        var events = new List<object> { new ShipCompleted(buildId, at) };
-        events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (ActiveShipBuildCount() - 1), at));
-        return events;
-    }
-
-    // Cancel (D3): no refund. If the cancelled build was Active, a slot frees and the next queued
-    // build auto-starts. Unknown build => no-op.
-    public IReadOnlyList<object> CancelShipBuild(Guid buildId, DateTimeOffset at)
-    {
-        var build = ShipQueue.FirstOrDefault(b => b.Id == buildId);
-        if (build is null)
-        {
-            return [];
-        }
-
-        var events = new List<object> { new ShipConstructionCancelled(buildId, at) };
-        if (build.Status == ShipBuildStatus.Active)
-        {
-            events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (ActiveShipBuildCount() - 1), at));
-        }
-
-        return events;
-    }
-
-    public void Apply(ShipConstructionQueued @event)
-    {
-        ShipQueue.Add(new ShipBuild(
-            @event.BuildId, @event.Type, ShipBuildStatus.Queued,
-            @event.QueuedAt, StartedAt: null, CompletesAt: null,
-            @event.DrainPerSecond, @event.BuildDurationSeconds));
-        // Queued builds neither drain nor draw — no rate change until they start.
-    }
-
-    public void Apply(ShipConstructionStarted @event)
-    {
-        var index = IndexOfShipBuild(@event.BuildId);
-        ShipQueue[index] = ShipQueue[index] with
-        {
-            Status = ShipBuildStatus.Active,
-            StartedAt = @event.StartedAt,
-            CompletesAt = @event.CompletesAt,
-        };
-        RebaseRates(@event.StartedAt);   // drain begins; shipyard goes active (energy)
-    }
-
-    public void Apply(ShipCompleted @event)
-    {
-        var index = IndexOfShipBuild(@event.BuildId);
-        var build = ShipQueue[index];
-        ShipQueue.RemoveAt(index);
-        Ships.Add(new RosterShip(build.Id, build.Type, @event.CompletedAt));
-        RebaseRates(@event.CompletedAt);
-    }
-
-    public void Apply(ShipConstructionCancelled @event)
-    {
-        var index = IndexOfShipBuild(@event.BuildId);
-        ShipQueue.RemoveAt(index);
-        RebaseRates(@event.CancelledAt);
-    }
-
-    private int IndexOfShipBuild(Guid buildId)
-    {
-        for (var i = 0; i < ShipQueue.Count; i++)
-        {
-            if (ShipQueue[i].Id == buildId)
-            {
-                return i;
-            }
-        }
-
-        throw new InvalidOperationException($"Ship build {buildId} not found.");
-    }
-
     public void CheckpointAllResources(DateTimeOffset now)
     {
         IronOre = IronOre.Checkpoint(now);
         IronIngot = IronIngot.Checkpoint(now);
     }
 
-    // Energy is a flow resource: derived on demand from the operational building
-    // composition, never stored (game-design/resources.md). Methods rather than
-    // computed properties so they stay out of the Marten snapshot document.
-    public decimal GetEnergyGenerationMw() => Buildings
-        .Where(b => b.Status == BuildingStatus.Operational)
-        .Sum(b => BuildingSpecs.EnergyOutputMw(b.Type));
-
-    public decimal GetEnergyConsumptionMw()
+    // Cargo storage mutations (spec §2.5, #50). A fleet loading from or delivering to a
+    // planet's buffer is a programming error, not a user-facing one — the endpoint
+    // pre-validates for its own 409 response; this is the defensive backstop.
+    public CargoLoadedFromStorage LoadCargoFromStorage(
+        Guid fleetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
     {
-        var operational = Buildings.Where(b => b.Status == BuildingStatus.Operational).ToList();
-        var nonShipyardDraw = operational
-            .Where(b => b.Type != BuildingType.Shipyard)
-            .Sum(b => BuildingSpecs.EnergyDrawMw(b.Type));
-
-        var shipyardCount = operational.Count(b => b.Type == BuildingType.Shipyard);
-        if (shipyardCount == 0)
+        if (ironOre < 0 || ironIngot < 0)
         {
-            return nonShipyardDraw;
+            throw new InvalidOperationException("Cargo amounts cannot be negative.");
         }
 
-        // Fungible bays: work concentrates into as few shipyards as possible. Those drawing full
-        // power = ceil(activeBuilds / ParallelBuilds); the rest idle at 5%.
-        var full = BuildingSpecs.EnergyDrawMw(BuildingType.Shipyard);
-        var activeShipyards = Math.Min(
-            shipyardCount,
-            (int)Math.Ceiling(ActiveShipBuildCount() / (double)BuildingSpecs.ShipyardParallelBuilds));
-        var shipyardDraw = (activeShipyards * full)
-            + ((shipyardCount - activeShipyards) * BuildingSpecs.ShipyardIdleDrawFactor * full);
+        if (ironOre > IronOre.GetCurrentValue(at) || ironIngot > IronIngot.GetCurrentValue(at))
+        {
+            throw new InvalidOperationException("Cannot load more cargo than is in storage.");
+        }
 
-        return nonShipyardDraw + shipyardDraw;
+        return new CargoLoadedFromStorage(fleetId, ironOre, ironIngot, at);
     }
 
-    // In [0, 1]: 1 when demand is met (or there is no demand), generation/consumption
-    // when overloaded, 0 when consumers exist but no generator does.
-    public decimal GetProductivityMultiplier()
+    // Both cargo Apply methods checkpoint the affected pool at `at` first — non-regressing
+    // per #44, so a backwards `at` freezes CheckpointTime but still locks in the value
+    // accrued up to it — then adjust only CheckpointValue, clamped to [0, StorageCapacity].
+    // Rate is deliberately left untouched and RebaseRates is deliberately NOT called: cargo
+    // moves stored value between a ship's hold and the planet's buffer, it never changes
+    // which buildings are operational, so it must not perturb the production/consumption
+    // rates RebaseRates derives from building composition (spec §2.5 — the only two
+    // composition-preserving Apply methods on this aggregate).
+    public void Apply(CargoLoadedFromStorage @event)
     {
-        var consumption = GetEnergyConsumptionMw();
-        if (consumption == 0)
+        IronOre = IronOre.Checkpoint(@event.At);
+        IronOre = IronOre with
         {
-            return 1m;
+            CheckpointValue = Math.Clamp(IronOre.CheckpointValue - @event.IronOre, 0, IronOre.StorageCapacity),
+        };
+
+        IronIngot = IronIngot.Checkpoint(@event.At);
+        IronIngot = IronIngot with
+        {
+            CheckpointValue = Math.Clamp(IronIngot.CheckpointValue - @event.IronIngot, 0, IronIngot.StorageCapacity),
+        };
+    }
+
+    // Computes the accepted amounts here (not at the caller) so the event itself carries
+    // the truth of what the planet actually took in — callers (the unload endpoint, the
+    // Transport arrival handler) read them straight off the event to build the matching
+    // Fleet-side CargoUnloaded, rather than re-deriving headroom themselves.
+    public CargoDeliveredToStorage AcceptCargoDelivery(
+        Guid fleetId, decimal ironOre, decimal ironIngot, DateTimeOffset at)
+    {
+        if (ironOre < 0 || ironIngot < 0)
+        {
+            throw new InvalidOperationException("Cargo amounts cannot be negative.");
         }
 
-        return Math.Min(1m, GetEnergyGenerationMw() / consumption);
+        var acceptedOre = Math.Min(ironOre, Math.Max(0, IronOre.StorageCapacity - IronOre.GetCurrentValue(at)));
+        var acceptedIngot = Math.Min(ironIngot, Math.Max(0, IronIngot.StorageCapacity - IronIngot.GetCurrentValue(at)));
+
+        return new CargoDeliveredToStorage(fleetId, acceptedOre, acceptedIngot, at);
+    }
+
+    // See the rationale comment on Apply(CargoLoadedFromStorage): checkpoint-then-clamp,
+    // Rate untouched, no RebaseRates.
+    public void Apply(CargoDeliveredToStorage @event)
+    {
+        IronOre = IronOre.Checkpoint(@event.At);
+        IronOre = IronOre with
+        {
+            CheckpointValue = Math.Clamp(IronOre.CheckpointValue + @event.IronOre, 0, IronOre.StorageCapacity),
+        };
+
+        IronIngot = IronIngot.Checkpoint(@event.At);
+        IronIngot = IronIngot with
+        {
+            CheckpointValue = Math.Clamp(IronIngot.CheckpointValue + @event.IronIngot, 0, IronIngot.StorageCapacity),
+        };
     }
 }
