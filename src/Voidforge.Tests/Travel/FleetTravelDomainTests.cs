@@ -147,6 +147,89 @@ public sealed class FleetTravelDomainTests
     }
 
     [Fact]
+    public void RecallProducesReturnPlanHeadingToOriginKeepsInTransit()
+    {
+        var (fleet, _, originPlanetId) = AssembledFleet(ShipType.ColonyShip, ShipType.CargoVessel);
+        fleet.Apply(new CargoLoaded(100m, 50m, _t0.AddSeconds(15)));
+        var shipIdsBefore = fleet.Ships.Select(s => s.Id).ToList();
+        var destinationPlanetId = Guid.NewGuid();
+        var departAt = _t0.AddSeconds(20);
+        var plan = Plan(departAt.AddSeconds(140));
+        fleet.Apply(fleet.Depart(destinationPlanetId, MissionType.Move, plan, departAt));
+
+        var elapsed = TimeSpan.FromSeconds(40);
+        var recallAt = departAt + elapsed;
+        var @event = fleet.Recall(recallAt);
+
+        Assert.Equal(recallAt, @event.RecalledAt);
+        Assert.Equal(recallAt + elapsed, @event.ReturnPlan.ArrivesAt);
+        var leg = Assert.Single(@event.ReturnPlan.Legs);
+        Assert.Equal(originPlanetId, leg.WaypointPlanetId);
+        Assert.Equal(plan.TotalDistance, @event.ReturnPlan.TotalDistance);
+
+        fleet.Apply(@event);
+
+        Assert.Equal(FleetStatus.InTransit, fleet.Status);
+        Assert.Equal(originPlanetId, fleet.DestinationPlanetId);
+        Assert.Equal(recallAt + elapsed, fleet.ArrivesAt);
+        Assert.Equal(recallAt, fleet.DepartedAt);
+        Assert.Equal(MissionType.Move, fleet.Mission);
+        Assert.Equal(recallAt, fleet.RecalledAt);
+        Assert.Equal(@event.ReturnPlan, fleet.TravelPlan);
+        // Cargo and ships survive the recall untouched.
+        Assert.Equal(100m, fleet.CargoIronOre);
+        Assert.Equal(50m, fleet.CargoIronIngot);
+        Assert.Equal(shipIdsBefore, fleet.Ships.Select(s => s.Id).ToList());
+    }
+
+    [Fact]
+    public void RecalledArrivalStationsAtOriginWithCargoIntact()
+    {
+        var (fleet, _, originPlanetId) = AssembledFleet(ShipType.ColonyShip, ShipType.CargoVessel);
+        fleet.Apply(new CargoLoaded(100m, 50m, _t0.AddSeconds(15)));
+        var shipIdsBefore = fleet.Ships.Select(s => s.Id).ToList();
+        var departAt = _t0.AddSeconds(20);
+        var plan = Plan(departAt.AddSeconds(140));
+        fleet.Apply(fleet.Depart(Guid.NewGuid(), MissionType.Move, plan, departAt));
+        var recallAt = departAt + TimeSpan.FromSeconds(40);
+        var recalled = fleet.Recall(recallAt);
+        fleet.Apply(recalled);
+        var returnArrivesAt = recalled.ReturnPlan.ArrivesAt;
+
+        var arrived = Assert.IsType<FleetArrived>(Assert.Single(fleet.Arrive(returnArrivesAt)));
+        Assert.Equal(originPlanetId, arrived.DestinationPlanetId);
+        fleet.Apply(arrived);
+
+        Assert.Equal(FleetStatus.Stationed, fleet.Status);
+        Assert.Equal(originPlanetId, fleet.LocationPlanetId);
+        Assert.Null(fleet.RecalledAt);
+        Assert.Equal(100m, fleet.CargoIronOre);
+        Assert.Equal(50m, fleet.CargoIronIngot);
+        Assert.Equal(shipIdsBefore, fleet.Ships.Select(s => s.Id).ToList());
+    }
+
+    [Fact]
+    public void RecallOfStationedFleetThrows()
+    {
+        var (fleet, _, _) = AssembledFleet(ShipType.ColonyShip);
+
+        Assert.Throws<InvalidOperationException>(() => fleet.Recall(_t0.AddSeconds(30)));
+    }
+
+    [Fact]
+    public void RecallOfAlreadyRecalledFleetThrows()
+    {
+        var (fleet, _, _) = AssembledFleet(ShipType.ColonyShip);
+        var departAt = _t0.AddSeconds(20);
+        var plan = Plan(departAt.AddSeconds(140));
+        fleet.Apply(fleet.Depart(Guid.NewGuid(), MissionType.Move, plan, departAt));
+        var recallAt = departAt + TimeSpan.FromSeconds(40);
+        fleet.Apply(fleet.Recall(recallAt));
+
+        Assert.Throws<InvalidOperationException>(() => fleet.Recall(recallAt.AddSeconds(5)));
+    }
+
+    [Fact]
     public void DisbandAfterArrivalSucceedsAtTheNewLocation()
     {
         var (fleet, ownerId, _) = AssembledFleet(ShipType.ColonyShip);
