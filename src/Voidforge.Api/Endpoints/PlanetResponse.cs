@@ -45,5 +45,5 @@ public sealed record PlanetResponse(
         planet.Ships.Count,
         planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Active),
         planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Queued),
-        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt))]);
+        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt, b.HaltReason))]);
 }

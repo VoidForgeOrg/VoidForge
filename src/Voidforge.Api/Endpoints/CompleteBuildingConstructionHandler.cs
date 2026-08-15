@@ -31,5 +31,15 @@ public static class CompleteBuildingConstructionHandler
         // A completing Shipyard can auto-start queued ship builds — schedule their completions.
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, message.PlanetId, events);
         await session.SaveChangesAsync();
+
+        // A newly Operational producer changes production rates (and thus fill deadlines). Reschedule
+        // from the FRESH post-commit aggregate — AppendMany does not re-apply events to stream.Aggregate,
+        // so PredictStorageDeadlines on the stale `planet` would use pre-completion rates (#69).
+        var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
+        if (updated is not null)
+        {
+            await StorageHaltScheduling.ScheduleDeadlinesAsync(
+                bus, message.PlanetId, updated.PredictStorageDeadlines(message.CompletesAt));
+        }
     }
 }
