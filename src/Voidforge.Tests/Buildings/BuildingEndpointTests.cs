@@ -136,4 +136,85 @@ public sealed class BuildingEndpointTests
             s.StatusCodeShouldBe(409);
         });
     }
+
+    [Fact]
+    public async Task CancelConstructionReturns204AndTombstonesSlot()
+    {
+        var registration = await _host.RegisterPlayer("Building_Test_");
+        var before = await _host.GetPlanet(registration);
+        // The new slot lands at the raw list length (no tombstones yet) = its stable SlotIndex.
+        var slotIndex = before.Buildings.Count;
+
+        await _host.Scenario(s =>
+        {
+            s.Post.Json(new PlaceBuildingRequest(BuildingType.Drill))
+                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(200);
+        });
+
+        await _host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{registration.HomeworldId}/buildings/{slotIndex}/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(204);
+        });
+
+        var after = await _host.GetPlanet(registration);
+        Assert.Equal(BuildingStatus.Cancelled, after.Buildings[slotIndex].Status);
+    }
+
+    [Fact]
+    public async Task CancelConstructionOnUnownedPlanetReturns403()
+    {
+        var registration = await _host.RegisterPlayer("Building_Test_");
+        var foreignPlanetId = await _host.FindPlanetOtherThan(registration);
+
+        await _host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{foreignPlanetId}/buildings/0/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(403);
+        });
+    }
+
+    [Fact]
+    public async Task CancelConstructionOnNonExistentPlanetReturns404()
+    {
+        var registration = await _host.RegisterPlayer("Building_Test_");
+
+        await _host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{Guid.NewGuid()}/buildings/0/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(404);
+        });
+    }
+
+    [Fact]
+    public async Task CancelConstructionForOutOfRangeSlotReturns404()
+    {
+        var registration = await _host.RegisterPlayer("Building_Test_");
+
+        await _host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{registration.HomeworldId}/buildings/99/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(404);
+        });
+    }
+
+    [Fact]
+    public async Task CancelConstructionOnOperationalBuildingReturns409()
+    {
+        var registration = await _host.RegisterPlayer("Building_Test_");
+
+        // Slot 0 is a seeded Operational homeworld building — only in-progress construction cancels.
+        await _host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{registration.HomeworldId}/buildings/0/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(409);
+        });
+    }
 }

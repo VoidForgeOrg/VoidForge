@@ -5,12 +5,19 @@ namespace Voidforge.Api.Domain;
 // Building-lifecycle concern of the Planet aggregate (#40 split).
 public sealed partial class Planet
 {
+    // Slots actually occupying capacity (#72): every non-tombstone building. Cancelled/Demolished
+    // are terminal tombstones that keep their list position (so SlotIndex stays a stable monotonic
+    // id) but free the slot; Demolishing is mid-teardown and still occupies one. The free-slot
+    // invariant counts these, not the raw Buildings.Count (which never shrinks — it is append-only).
+    private int LiveBuildingCount() => Buildings
+        .Count(b => b.Status is not (BuildingStatus.Cancelled or BuildingStatus.Demolished));
+
     // Validates the slot invariant against current state and produces the event to append.
     // Does not mutate — the resulting BuildingPlaced is applied via Apply once persisted.
     // Ownership/authorization is an application concern and stays at the endpoint.
     public BuildingPlaced PlaceBuilding(BuildingType type, DateTimeOffset placedAt)
     {
-        if (Buildings.Count >= BuildingSlotCount)
+        if (LiveBuildingCount() >= BuildingSlotCount)
         {
             throw new NoFreeSlotsException("No available building slots on this planet.");
         }
@@ -30,7 +37,7 @@ public sealed partial class Planet
     public BuildingConstructionStarted StartConstruction(
         BuildingType type, DateTimeOffset now, decimal ingotCost, decimal buildDurationSeconds)
     {
-        if (Buildings.Count >= BuildingSlotCount)
+        if (LiveBuildingCount() >= BuildingSlotCount)
         {
             throw new NoFreeSlotsException("No available building slots on this planet.");
         }
@@ -92,5 +99,37 @@ public sealed partial class Planet
             ConstructionDrainPerSecond = 0m,
         };
         RebaseRates(@event.CompletedAt);
+    }
+
+    // Cancel in-progress construction (#72): no refund. Pure + validate-here — returns empty
+    // (no-op) unless the slot exists and is still UnderConstruction. Cancelling anything else
+    // (Operational, a tombstone, or a demolition) is rejected at the endpoint as a 409, and this
+    // is the defensive backstop. The slot becomes a Cancelled tombstone via Apply, never removed —
+    // so an in-flight CompleteBuildingConstruction message finds the tombstone and no-ops.
+    public IReadOnlyList<object> CancelConstruction(int slotIndex, DateTimeOffset at)
+    {
+        if (slotIndex < 0 || slotIndex >= Buildings.Count)
+        {
+            return [];
+        }
+
+        if (Buildings[slotIndex].Status != BuildingStatus.UnderConstruction)
+        {
+            return [];
+        }
+
+        return [new BuildingConstructionCancelled(slotIndex, at)];
+    }
+
+    public void Apply(BuildingConstructionCancelled @event)
+    {
+        var slot = Buildings[@event.SlotIndex];
+        Buildings[@event.SlotIndex] = slot with
+        {
+            Status = BuildingStatus.Cancelled,
+            CompletesAt = null,
+            ConstructionDrainPerSecond = 0m,   // drops out of RebaseRates → ingot rate rises
+        };
+        RebaseRates(@event.At);
     }
 }

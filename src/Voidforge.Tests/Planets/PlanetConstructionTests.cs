@@ -126,4 +126,98 @@ public sealed class PlanetConstructionTests
 
         Assert.Empty(planet.CompleteBuilding(99, now));
     }
+
+    [Fact]
+    public void CancelConstructionTombstonesSlotAndRemovesDrain()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var planet = Homeworld(now);
+        var started = planet.StartConstruction(BuildingType.Drill, now, 300m, 60m);
+        planet.Apply(started);
+        // Homeworld base ingot rate is +10/s; the construction drain (5/s) drops it to +5/s.
+        Assert.Equal(5m, planet.IronIngot.Rate);
+
+        var events = planet.CancelConstruction(started.SlotIndex, now);
+        var cancelled = Assert.IsType<BuildingConstructionCancelled>(Assert.Single(events));
+        Assert.Equal(started.SlotIndex, cancelled.SlotIndex);
+        planet.Apply(cancelled);
+
+        var slot = planet.Buildings[started.SlotIndex];
+        Assert.Equal(BuildingStatus.Cancelled, slot.Status);
+        Assert.Null(slot.CompletesAt);
+        Assert.Equal(0m, slot.ConstructionDrainPerSecond);
+        // Drain gone: ingot rate rebases back to the homeworld's +10/s.
+        Assert.Equal(10m, planet.IronIngot.Rate);
+    }
+
+    [Fact]
+    public void CancelledSlotIndexIsNeverReused()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var planet = Homeworld(now);   // slots 0,1,2 operational
+        var first = planet.StartConstruction(BuildingType.Drill, now, 300m, 60m);
+        Assert.Equal(3, first.SlotIndex);
+        planet.Apply(first);
+
+        planet.Apply((BuildingConstructionCancelled)planet.CancelConstruction(first.SlotIndex, now)[0]);
+        Assert.Equal(BuildingStatus.Cancelled, planet.Buildings[3].Status);
+
+        // A fresh construction must claim the raw list length (4), NEVER reuse the tombstoned 3.
+        var second = planet.StartConstruction(BuildingType.Refinery, now, 300m, 60m);
+        Assert.Equal(planet.Buildings.Count, second.SlotIndex);   // = 4 (raw, monotonic id)
+        Assert.Equal(4, second.SlotIndex);
+        Assert.NotEqual(first.SlotIndex, second.SlotIndex);
+        planet.Apply(second);
+
+        // The cancelled slot stays a tombstone; the new slot is the one under construction.
+        Assert.Equal(BuildingStatus.Cancelled, planet.Buildings[3].Status);
+        Assert.Equal(BuildingStatus.UnderConstruction, planet.Buildings[4].Status);
+    }
+
+    [Fact]
+    public void CancellingFreesSlotForNewPlacement()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var planet = Homeworld(now);   // 3 live, slot count 6
+        for (var i = 0; i < 3; i++)    // fill the remaining 3 slots via construction => 6 live
+        {
+            planet.Apply(planet.StartConstruction(BuildingType.Generator, now, 300m, 60m));
+        }
+
+        // All six slots are live (LiveBuildingCount == BuildingSlotCount) — placement is rejected.
+        Assert.Throws<NoFreeSlotsException>(
+            () => planet.StartConstruction(BuildingType.Drill, now, 300m, 60m));
+
+        // Cancelling one under-construction slot frees a slot (LiveBuildingCount drops to 5).
+        planet.Apply((BuildingConstructionCancelled)planet.CancelConstruction(5, now)[0]);
+
+        // Placement now succeeds and claims a fresh index (6), never the cancelled slot (5).
+        var started = planet.StartConstruction(BuildingType.Drill, now, 300m, 60m);
+        Assert.Equal(planet.Buildings.Count, started.SlotIndex);   // = 6 (raw list length)
+        Assert.NotEqual(5, started.SlotIndex);
+    }
+
+    [Fact]
+    public void CompleteBuildingIsNoOpOnCancelledTombstone()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var planet = Homeworld(now);
+        var started = planet.StartConstruction(BuildingType.Drill, now, 300m, 60m);
+        planet.Apply(started);
+        planet.Apply((BuildingConstructionCancelled)planet.CancelConstruction(started.SlotIndex, now)[0]);
+
+        // An in-flight CompleteBuildingConstruction for the now-cancelled slot at its old CompletesAt
+        // finds the tombstone (status Cancelled, not UnderConstruction) and no-ops.
+        Assert.Empty(planet.CompleteBuilding(started.SlotIndex, started.CompletesAt));
+    }
+
+    [Fact]
+    public void CancelConstructionIsNoOpForOutOfRangeOrNonConstructingSlot()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var planet = Homeworld(now);
+
+        Assert.Empty(planet.CancelConstruction(99, now));   // out of range
+        Assert.Empty(planet.CancelConstruction(0, now));    // slot 0 is a seeded Operational building
+    }
 }
