@@ -33,6 +33,12 @@ public sealed class BuildingEndpointTests
         });
     }
 
+    // Free slots the planet will still accept a placement into: capacity minus LIVE (non-tombstone)
+    // buildings. Raw Buildings.Count would overcount once Cancelled/Demolished tombstones linger in
+    // the append-only list (#72), so filter them out — mirrors Planet.LiveBuildingCount server-side.
+    private static int FreeSlots(PlanetResponse planet) => planet.BuildingSlotCount
+        - planet.Buildings.Count(b => b.Status is not (BuildingStatus.Cancelled or BuildingStatus.Demolished));
+
     [Fact]
     public async Task PlaceBuildingStartsConstruction()
     {
@@ -132,7 +138,7 @@ public sealed class BuildingEndpointTests
         var planet = await _host.GetPlanet(registration);
 
         // Fill remaining slots, then the next placement must be rejected.
-        var freeSlots = planet.BuildingSlotCount - planet.Buildings.Count;
+        var freeSlots = FreeSlots(planet);
         for (var i = 0; i < freeSlots; i++)
         {
             await _host.Scenario(s =>
@@ -270,8 +276,8 @@ public sealed class BuildingEndpointTests
         var planetId = registration.HomeworldId;
         var planet = await _host.GetPlanet(registration);
 
-        // Fill every remaining slot so the planet is at capacity (no tombstones yet, so raw count == live).
-        var freeSlots = planet.BuildingSlotCount - planet.Buildings.Count;
+        // Fill every remaining slot so the planet is at capacity (FreeSlots counts non-tombstones).
+        var freeSlots = FreeSlots(planet);
         for (var i = 0; i < freeSlots; i++)
         {
             await PlaceGenerator(registration, 200);
