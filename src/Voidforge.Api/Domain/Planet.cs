@@ -39,17 +39,15 @@ public sealed partial class Planet
     // same rationale as the energy getters.
     public Coordinates GetCoordinates() => new(X, Y, Z);
 
-    // Raw `with` (not the non-regressing Checkpoint) is safe here specifically: a claimable
-    // planet's pools are zero-rate/zero-value (nothing has ever accrued, so there is nothing
-    // to lose by overwriting CheckpointTime outright), and homeworld seeding passes its
-    // starting stores explicitly via this same event rather than deriving them from an
-    // in-flight accrual. Fleet colonization always claims through Claim (zero stores, §2.4);
-    // registration's richer seeded colonization is the other caller of this event/Apply.
     public void Apply(PlanetColonized @event)
     {
         OwnerId = @event.OwnerId;
-        IronOre = IronOre with { CheckpointValue = @event.IronOreStored, CheckpointTime = @event.ColonizedAt };
-        IronIngot = IronIngot with { CheckpointValue = @event.IronIngotStored, CheckpointTime = @event.ColonizedAt };
+        // Guarded (#44): checkpoint at the colonization instant (non-regressing), then set the seeded
+        // stores. Numerically identical to the prior raw `with` on the zero-rate/zero-value claim-time
+        // pool this event always lands on (fleet Claim → 0/0; homeworld → first event after PlanetCreated),
+        // but the invariant is now type-enforced rather than convention-enforced.
+        IronOre = IronOre.Checkpoint(@event.ColonizedAt) with { CheckpointValue = @event.IronOreStored };
+        IronIngot = IronIngot.Checkpoint(@event.ColonizedAt) with { CheckpointValue = @event.IronIngotStored };
     }
 
     // The D10 null-owner assertion (spec §2.4): guards the claim itself. A genuine race
