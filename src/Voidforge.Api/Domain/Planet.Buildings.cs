@@ -81,9 +81,11 @@ public sealed partial class Planet
         var events = new List<object> { new BuildingCompleted(slotIndex, at) };
         if (slot.Type == BuildingType.Shipyard)
         {
-            // This shipyard becomes operational at `at`, raising capacity by ParallelBuilds.
+            // This shipyard becomes operational at `at`, raising capacity by ParallelBuilds. Uses
+            // OccupiedBayCount (Active + Halted) so a queued build fills only genuinely free bays and
+            // does not start into a bay a starved (Halted) build still holds (#83).
             var newCapacity = BuildingSpecs.ShipyardParallelBuilds * (OperationalShipyardCount() + 1);
-            events.AddRange(StartQueuedBuilds(newCapacity - ActiveShipBuildCount(), at));
+            events.AddRange(StartQueuedBuilds(newCapacity - OccupiedBayCount(), at));
         }
 
         return events;

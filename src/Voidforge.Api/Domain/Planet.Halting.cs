@@ -149,8 +149,10 @@ public sealed partial class Planet
     // buffer, or with refineries producing, is left alone (mirrors the zero-inflow-AND-zero-buffer ore
     // test — avoids oscillation and the ill-defined even-split of fixed-drain consumers; production > 0
     // but below drain retains today's clamp-only behaviour). Emits one ConstructionHalted per
-    // UnderConstruction building; [] otherwise (also the validate-on-arrival no-op for a superseded
-    // CheckIngotStarved where ingots returned). Ship builds join here in Task 2.
+    // UnderConstruction building AND one ShipBuildHalted per Active ship build (both ingot consumers,
+    // gated by the same zero-production + empty-buffer test — a single planet-level ingot scalar drives
+    // both); [] otherwise (also the validate-on-arrival no-op for a superseded CheckIngotStarved where
+    // ingots returned).
     public IReadOnlyList<object> EvaluateIngotStarvation(DateTimeOffset at)
     {
         if (IngotProduction(at) > 0 || IronIngot.GetCurrentValue(at) > 0) return [];
@@ -162,7 +164,41 @@ public sealed partial class Planet
             if (slot.Status != BuildingStatus.UnderConstruction) continue;
             halts.Add(new ConstructionHalted(i, at));
         }
+
+        foreach (var build in ShipQueue)
+        {
+            if (build.Status != ShipBuildStatus.Active) continue;
+            halts.Add(new ShipBuildHalted(build.Id, at));
+        }
+
         return halts;
+    }
+
+    // EvaluateIngotStarvationResumes (#83): the ingot-consumer mirror of EvaluateInputStarvationResumes.
+    // Once ingots are genuinely restored — refineries producing again (IngotProduction(at) > 0) or the
+    // buffer refilled (IronIngot.GetCurrentValue(at) > 0) — every paused consumer resumes: one
+    // ConstructionResumed per ConstructionHalted building AND one ShipBuildResumed per Halted ship build.
+    // Both Apply methods recompute CompletesAt off the captured HaltedAt. [] while still starved (no
+    // production AND an empty buffer). Composition-driven (chained off the ore-return commit in Task 4),
+    // not check-driven; symmetric to EvaluateInputStarvationResumes.
+    public IReadOnlyList<object> EvaluateIngotStarvationResumes(DateTimeOffset at)
+    {
+        if (IngotProduction(at) <= 0 && IronIngot.GetCurrentValue(at) <= 0) return [];
+
+        var resumes = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            if (Buildings[i].Status != BuildingStatus.ConstructionHalted) continue;
+            resumes.Add(new ConstructionResumed(i, at));
+        }
+
+        foreach (var build in ShipQueue)
+        {
+            if (build.Status != ShipBuildStatus.Halted) continue;
+            resumes.Add(new ShipBuildResumed(build.Id, at));
+        }
+
+        return resumes;
     }
 
     // PredictIngotBufferEmpty (#83): the instant the stored IronIngot buffer empties while construction

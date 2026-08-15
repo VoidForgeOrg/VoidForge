@@ -150,4 +150,62 @@ public sealed class PlanetIngotStarvationTests
         Assert.Empty(planet.CompleteBuilding(0, originalCompletesAt));
         Assert.Equal(BuildingStatus.ConstructionHalted, planet.Buildings[0].Status); // unchanged.
     }
+
+    // (f) EvaluateIngotStarvation halts BOTH consumer kinds on the same trigger — an UnderConstruction
+    // building AND an Active ship build (#83, Task 2).
+    [Fact]
+    public void EvaluateIngotStarvationHaltsBothBuildingAndShipBuild()
+    {
+        var planet = HaltedBuildingAndShipPlanet(out var shipId);
+
+        Assert.Equal(BuildingStatus.ConstructionHalted, planet.Buildings[2].Status);
+        Assert.Equal(ShipBuildStatus.Halted, planet.ShipQueue.Single(b => b.Id == shipId).Status);
+    }
+
+    // (g) EvaluateIngotStarvationResumes emits a resume for EVERY paused consumer once ingots return —
+    // ConstructionResumed per ConstructionHalted building AND ShipBuildResumed per Halted ship build —
+    // and [] while still starved (no production AND an empty buffer).
+    [Fact]
+    public void EvaluateIngotStarvationResumesEmitsBothConsumerKindsWhenIngotsReturn()
+    {
+        var planet = HaltedBuildingAndShipPlanet(out var shipId);
+
+        // Still starved (empty buffer, zero production) → no resumes.
+        Assert.Empty(planet.EvaluateIngotStarvationResumes(_base));
+
+        // Ingots return (buffer refilled) → both consumer kinds resume.
+        var resumeAt = _base.AddSeconds(200);
+        planet.IronIngot = planet.IronIngot with { CheckpointValue = 500m, CheckpointTime = resumeAt };
+        var resumes = planet.EvaluateIngotStarvationResumes(resumeAt);
+
+        Assert.Equal(2, resumes.Count);
+        Assert.Equal(2, Assert.Single(resumes.OfType<ConstructionResumed>()).SlotIndex);
+        Assert.Equal(shipId, Assert.Single(resumes.OfType<ShipBuildResumed>()).BuildId);
+    }
+
+    // A planet driven into ingot starvation with BOTH an UnderConstruction building (slot 2) and an
+    // Active ship build halted: Generator + Shipyard operational (so the ship can be active and zero
+    // ingots are produced — no refinery), an under-construction Drill, an active ship build, empty buffer.
+    private static Planet HaltedBuildingAndShipPlanet(out Guid shipId)
+    {
+        var planet = CreateColonizedPlanet();
+        Place(planet, _base, BuildingType.Generator, BuildingType.Shipyard);
+        StartBuild(planet, BuildingType.Drill, _base, 100m, 100m); // slot 2, under construction.
+
+        shipId = Guid.NewGuid();
+        planet.Apply(new ShipConstructionQueued(shipId, ShipType.ColonyShip, _base, 10m, 30m));
+        planet.Apply(new ShipConstructionStarted(shipId, _base, _base.AddSeconds(30)));
+        EmptyIngotBuffer(planet, _base);
+
+        foreach (var e in planet.EvaluateIngotStarvation(_base))
+        {
+            switch (e)
+            {
+                case ConstructionHalted h: planet.Apply(h); break;
+                case ShipBuildHalted h: planet.Apply(h); break;
+            }
+        }
+
+        return planet;
+    }
 }

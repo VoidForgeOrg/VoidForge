@@ -9,7 +9,16 @@ public sealed partial class Planet
     private int OperationalShipyardCount() => Buildings
         .Count(b => b.Status == BuildingStatus.Operational && b.Type == BuildingType.Shipyard);
 
+    // Active builds only — the fungible-bay ENERGY math (Planet.Energy.cs) counts a halted build as
+    // drawing no full power, so this must exclude Halted (#83).
     private int ActiveShipBuildCount() => ShipQueue.Count(b => b.Status == ShipBuildStatus.Active);
+
+    // Bays occupied for AUTO-START capacity purposes (#83): Active AND Halted builds both hold their
+    // shipyard bay, so a queued build must not auto-start into a bay a starved (Halted) build still
+    // occupies. Distinct from ActiveShipBuildCount (energy). Equal to it whenever nothing is halted, so
+    // normal (non-starved) auto-start is unchanged.
+    private int OccupiedBayCount() =>
+        ShipQueue.Count(b => b.Status is ShipBuildStatus.Active or ShipBuildStatus.Halted);
 
     private int ShipyardCapacity() => BuildingSpecs.ShipyardParallelBuilds * OperationalShipyardCount();
 
@@ -41,8 +50,9 @@ public sealed partial class Planet
         };
 
         // Invariant: builds never wait while capacity is free, so if there is room the build we
-        // just queued is the one that starts.
-        if (ActiveShipBuildCount() < ShipyardCapacity())
+        // just queued is the one that starts. Uses OccupiedBayCount (Active + Halted) so a build does
+        // NOT auto-start into a bay a starved (Halted) build still holds (#83).
+        if (OccupiedBayCount() < ShipyardCapacity())
         {
             events.Add(new ShipConstructionStarted(buildId, now, now.AddSeconds((double)buildDurationSeconds)));
         }
@@ -62,7 +72,9 @@ public sealed partial class Planet
         }
 
         var events = new List<object> { new ShipCompleted(buildId, at) };
-        events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (ActiveShipBuildCount() - 1), at));
+        // The completing build is Active, so it is counted in OccupiedBayCount; -1 frees its bay. A
+        // Halted build still holds its bay, so a queued build only starts into genuine free capacity (#83).
+        events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (OccupiedBayCount() - 1), at));
         return events;
     }
 
@@ -79,7 +91,9 @@ public sealed partial class Planet
         var events = new List<object> { new ShipConstructionCancelled(buildId, at) };
         if (build.Status == ShipBuildStatus.Active)
         {
-            events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (ActiveShipBuildCount() - 1), at));
+            // The cancelled build is Active, so it is counted in OccupiedBayCount; -1 frees its bay.
+            // A Halted build still holds its bay, so a queued build only starts into free capacity (#83).
+            events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (OccupiedBayCount() - 1), at));
         }
 
         return events;
@@ -120,6 +134,41 @@ public sealed partial class Planet
         var index = IndexOfShipBuild(@event.BuildId);
         ShipQueue.RemoveAt(index);
         RebaseRates(@event.CancelledAt);
+    }
+
+    // Apply(ShipBuildHalted) (#83): pause an active ship build. Status → Halted (leaves the Active set, so
+    // RebaseRates' shipBuildDrain filter drops its drain to 0 and the fungible-bay energy math stops
+    // counting it as full-power) and stamp HaltedAt. CompletesAt and DrainPerSecond are KEPT: resume
+    // needs CompletesAt − HaltedAt for the remaining work, and the kept drain is restored on resume (it
+    // is excluded from the drain sum while Halted, so keeping it is harmless). The bay stays occupied for
+    // auto-start (OccupiedBayCount counts Halted).
+    public void Apply(ShipBuildHalted @event)
+    {
+        var index = IndexOfShipBuild(@event.BuildId);
+        ShipQueue[index] = ShipQueue[index] with
+        {
+            Status = ShipBuildStatus.Halted,
+            HaltedAt = @event.At,
+        };
+        RebaseRates(@event.At);
+    }
+
+    // Apply(ShipBuildResumed) (#83): resume a paused ship build. The remaining work captured at halt was
+    // CompletesAt − HaltedAt (both non-null on a Halted build); rebase completion to resumeAt + remaining
+    // so the paused span is added onto the schedule. Status → Active (RebaseRates re-adds DrainPerSecond
+    // to the ingot drain and the bay draws full power again) and clear HaltedAt.
+    public void Apply(ShipBuildResumed @event)
+    {
+        var index = IndexOfShipBuild(@event.BuildId);
+        var build = ShipQueue[index];
+        var remaining = build.CompletesAt!.Value - build.HaltedAt!.Value;
+        ShipQueue[index] = build with
+        {
+            Status = ShipBuildStatus.Active,
+            CompletesAt = @event.At + remaining,
+            HaltedAt = null,
+        };
+        RebaseRates(@event.At);
     }
 
     private int IndexOfShipBuild(Guid buildId)
