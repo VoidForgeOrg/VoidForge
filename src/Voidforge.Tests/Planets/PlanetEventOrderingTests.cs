@@ -39,6 +39,54 @@ public sealed class PlanetEventOrderingTests
         planet.Apply((BuildingCompleted)events[0]);
     }
 
+    private static Planet Created()
+    {
+        var planet = new Planet();
+        planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
+        return planet;
+    }
+
+    // WS2 (#44): the seeded-store injection still lands exactly at the colonization instant after
+    // routing Apply(PlanetColonized) through the guarded Checkpoint — numerically identical to the
+    // old raw `with` on the zero-rate/zero-value claim-time pool this event always lands on.
+    [Fact]
+    public void ColonizationSeedsStoresAtTheColonizationInstant()
+    {
+        var t = DateTimeOffset.UtcNow;
+        var planet = Created();
+
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, t));
+
+        Assert.Equal(500m, planet.IronOre.CheckpointValue);
+        Assert.Equal(100m, planet.IronIngot.CheckpointValue);
+        Assert.Equal(t, planet.IronOre.CheckpointTime);
+        Assert.Equal(t, planet.IronIngot.CheckpointTime);
+    }
+
+    // WS2 guard (#44): with the raw `with` gone, a colonization stamped BEHIND an already-advanced
+    // pool checkpoint no longer rewinds CheckpointTime — the non-regressing Checkpoint freezes it.
+    // The claim-time pool is zero-rate/zero-value in production so this can't happen there; the test
+    // documents that the invariant is now enforced by the type, not by that convention.
+    [Fact]
+    public void ColonizingBehindAnAdvancedCheckpointDoesNotRegressIt()
+    {
+        var t = DateTimeOffset.UtcNow;
+        var planet = Created();
+
+        // Hypothetically advance the claim-time pools' checkpoint ahead of the colonization stamp.
+        var head = t.AddSeconds(120);
+        planet.IronOre = planet.IronOre with { CheckpointTime = head };
+        planet.IronIngot = planet.IronIngot with { CheckpointTime = head };
+
+        // A fleet claim seeds zero stores at the (earlier) arrival instant.
+        planet.Apply(planet.Claim(Guid.NewGuid(), t));
+
+        Assert.Equal(head, planet.IronOre.CheckpointTime);
+        Assert.Equal(head, planet.IronIngot.CheckpointTime);
+        Assert.Equal(0m, planet.IronOre.CheckpointValue);
+        Assert.Equal(0m, planet.IronIngot.CheckpointValue);
+    }
+
     [Fact]
     public void OutOfOrderCompletionNeverProducesNegativeElapsedOrBackwardsCheckpoint()
     {
