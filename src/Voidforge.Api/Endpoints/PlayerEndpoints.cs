@@ -26,7 +26,7 @@ public static class PlayerEndpoints
 
     [AllowAnonymous]
     [WolverinePost("/api/players/register")]
-    public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
+    public static async Task<Results<Ok<RegisterPlayerResponse>, ProblemHttpResult>> Register(
         RegisterPlayerRequest request,
         IDocumentStore store,
         IMessageBus bus,
@@ -42,7 +42,7 @@ public static class PlayerEndpoints
 
             if (nameTaken)
             {
-                return TypedResults.Conflict("Player name is already taken.");
+                return TypedResults.Problem(detail: "Player name is already taken.", statusCode: StatusCodes.Status409Conflict);
             }
         }
 
@@ -75,15 +75,15 @@ public static class PlayerEndpoints
                     // and our commit, tripping the Player.Name unique index. Return immediately —
                     // this is NOT the planet re-pick path: retrying would re-hit the same duplicate
                     // name every attempt and exhaust the loop pointlessly.
-                    return TypedResults.Conflict("Player name is already taken.");
+                    return TypedResults.Problem(detail: "Player name is already taken.", statusCode: StatusCodes.Status409Conflict);
                 case ClaimOutcome.NoUncolonizedPlanets:
-                    return TypedResults.StatusCode(503);
+                    return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
                 case ClaimOutcome.LostRace:
                     continue;   // stale read or a genuine tie lost on commit — re-pick
             }
         }
 
-        return TypedResults.StatusCode(503);
+        return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     private enum ClaimOutcome
@@ -180,19 +180,19 @@ public static class PlayerEndpoints
     }
 
     [WolverineGet("/api/players/me")]
-    public static async Task<Results<Ok<PlayerInfoResponse>, NotFound>> Me(
+    public static async Task<Results<Ok<PlayerInfoResponse>, ProblemHttpResult>> Me(
         ClaimsPrincipal principal,
         IQuerySession session)
     {
         if (principal.PlayerId() is not { } playerId)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         var player = await session.LoadAsync<Player>(playerId);
         if (player is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         return TypedResults.Ok(new PlayerInfoResponse(player.Id, player.Name, player.RegisteredAt));

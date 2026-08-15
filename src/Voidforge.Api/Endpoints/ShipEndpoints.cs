@@ -15,7 +15,7 @@ namespace Voidforge.Api.Endpoints;
 public static class ShipEndpoints
 {
     [WolverinePost("/api/planets/{planetId}/ship-queue")]
-    public static async Task<Results<Ok<ShipBuildResponse>, NotFound, ForbidHttpResult>> Queue(
+    public static async Task<Results<Ok<ShipBuildResponse>, ProblemHttpResult>> Queue(
         Guid planetId,
         QueueShipRequest request,
         ClaimsPrincipal principal,
@@ -32,12 +32,12 @@ public static class ShipEndpoints
         var planet = stream.Aggregate;
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
-            return TypedResults.Forbid();
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -58,7 +58,7 @@ public static class ShipEndpoints
     }
 
     [WolverineDelete("/api/planets/{planetId}/ship-queue/{buildId}")]
-    public static async Task<Results<Ok<PlanetResponse>, NotFound, ForbidHttpResult>> Cancel(
+    public static async Task<Results<Ok<PlanetResponse>, ProblemHttpResult>> Cancel(
         Guid planetId,
         Guid buildId,
         ClaimsPrincipal principal,
@@ -71,19 +71,19 @@ public static class ShipEndpoints
         var planet = stream.Aggregate;
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
-            return TypedResults.Forbid();
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         var now = timeProvider.GetUtcNow();
         var events = planet.CancelShipBuild(buildId, now);
         if (events.Count == 0)
         {
-            return TypedResults.NotFound();   // unknown build id
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);   // unknown build id
         }
 
         stream.AppendMany([.. events]);
@@ -96,7 +96,7 @@ public static class ShipEndpoints
 
     // Active builds first (with ETA), then queued FIFO. Paginated per the #29 contract.
     [WolverineGet("/api/planets/{planetId}/ship-queue")]
-    public static async Task<Results<Ok<PagedResponse<ShipBuildResponse>>, NotFound, BadRequest<string>>> GetQueue(
+    public static async Task<Results<Ok<PagedResponse<ShipBuildResponse>>, ProblemHttpResult>> GetQueue(
         Guid planetId,
         IQuerySession session,
         int? page = null,
@@ -105,7 +105,7 @@ public static class ShipEndpoints
         var planet = await session.LoadAsync<Planet>(planetId);
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         var parameters = PaginationParameters.Create(
@@ -113,7 +113,7 @@ public static class ShipEndpoints
             pageSize ?? PaginationParameters.DefaultPageSize);
         if (parameters is null)
         {
-            return TypedResults.BadRequest("page and pageSize must be >= 1.");
+            return TypedResults.Problem(detail: "page and pageSize must be >= 1.", statusCode: StatusCodes.Status400BadRequest);
         }
 
         IReadOnlyList<ShipBuild> ordered = planet.ShipQueue
@@ -128,7 +128,7 @@ public static class ShipEndpoints
 
     // Completed-ship roster, optionally filtered by type, sorted (CompletedAt, Id). Paginated.
     [WolverineGet("/api/planets/{planetId}/ships")]
-    public static async Task<Results<Ok<PagedResponse<RosterShipResponse>>, NotFound, BadRequest<string>>> GetRoster(
+    public static async Task<Results<Ok<PagedResponse<RosterShipResponse>>, ProblemHttpResult>> GetRoster(
         Guid planetId,
         IQuerySession session,
         ShipType? type = null,
@@ -138,7 +138,7 @@ public static class ShipEndpoints
         var planet = await session.LoadAsync<Planet>(planetId);
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         var parameters = PaginationParameters.Create(
@@ -146,7 +146,7 @@ public static class ShipEndpoints
             pageSize ?? PaginationParameters.DefaultPageSize);
         if (parameters is null)
         {
-            return TypedResults.BadRequest("page and pageSize must be >= 1.");
+            return TypedResults.Problem(detail: "page and pageSize must be >= 1.", statusCode: StatusCodes.Status400BadRequest);
         }
 
         IReadOnlyList<RosterShip> ordered = planet.Ships

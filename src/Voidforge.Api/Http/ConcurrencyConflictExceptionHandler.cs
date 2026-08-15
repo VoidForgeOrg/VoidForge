@@ -9,7 +9,12 @@ namespace Voidforge.Api.Http;
 // returns, so it cannot be caught inside the endpoint — this handler turns it into a retryable 409
 // instead of a 500. Scheduled message handlers are unaffected: their conflicts are retried via the
 // Wolverine OnException policy in Program.cs.
-internal sealed class ConcurrencyConflictExceptionHandler : IExceptionHandler
+//
+// Emits the 409 as a ProblemDetails through the registered IProblemDetailsService (D12/#74) so it
+// carries the exact same shape — Instance, traceId, framework-defaulted title/type — as every
+// endpoint's TypedResults.Problem responses.
+internal sealed class ConcurrencyConflictExceptionHandler(IProblemDetailsService problemDetailsService)
+    : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
@@ -20,9 +25,14 @@ internal sealed class ConcurrencyConflictExceptionHandler : IExceptionHandler
         }
 
         httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
-        await httpContext.Response.WriteAsJsonAsync(
-            new { detail = "Concurrent modification of this resource; please retry." },
-            cancellationToken);
-        return true;
+        return await problemDetailsService.TryWriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = httpContext,
+            ProblemDetails =
+            {
+                Status = StatusCodes.Status409Conflict,
+                Detail = "Concurrent modification of this resource; please retry.",
+            },
+        });
     }
 }

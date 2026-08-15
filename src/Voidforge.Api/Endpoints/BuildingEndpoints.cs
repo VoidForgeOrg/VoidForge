@@ -17,7 +17,7 @@ public static class BuildingEndpoints
     // and ingots drain over cost/duration; a durable CompleteBuildingConstruction message is
     // scheduled at the completion time (ADR 0001).
     [WolverinePost("/api/planets/{planetId}/buildings")]
-    public static async Task<Results<Ok<PlanetResponse>, NotFound, ForbidHttpResult, Conflict<string>>> Place(
+    public static async Task<Results<Ok<PlanetResponse>, ProblemHttpResult>> Place(
         Guid planetId,
         PlaceBuildingRequest request,
         ClaimsPrincipal principal,
@@ -34,12 +34,12 @@ public static class BuildingEndpoints
         var planet = stream.Aggregate;
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
-            return TypedResults.Forbid();
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -52,7 +52,7 @@ public static class BuildingEndpoints
         }
         catch (NoFreeSlotsException ex)
         {
-            return TypedResults.Conflict(ex.Message);
+            return TypedResults.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
         }
 
         stream.AppendOne(started);
@@ -76,7 +76,7 @@ public static class BuildingEndpoints
     // 204 with no body — nothing meaningful to return. Per plan decision 4, no resume hook is wired:
     // a cancelled ingot drain has nothing to un-halt in #72's world (deferred to #83).
     [WolverineDelete("/api/planets/{planetId}/buildings/{slotIndex}/construction")]
-    public static async Task<Results<NoContent, NotFound, ForbidHttpResult, Conflict<string>>> CancelConstruction(
+    public static async Task<Results<NoContent, ProblemHttpResult>> CancelConstruction(
         Guid planetId,
         int slotIndex,
         ClaimsPrincipal principal,
@@ -89,24 +89,24 @@ public static class BuildingEndpoints
         var planet = stream.Aggregate;
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
-            return TypedResults.Forbid();
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         // SlotIndex addresses the append-only Buildings list, so range is against the raw count; a
         // tombstoned slot is in range but its status is not UnderConstruction, handled below as 409.
         if (slotIndex < 0 || slotIndex >= planet.Buildings.Count)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (planet.Buildings[slotIndex].Status != BuildingStatus.UnderConstruction)
         {
-            return TypedResults.Conflict("Only in-progress construction can be cancelled.");
+            return TypedResults.Problem(detail: "Only in-progress construction can be cancelled.", statusCode: StatusCodes.Status409Conflict);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -128,7 +128,7 @@ public static class BuildingEndpoints
     // list position throughout, so SlotIndex stays stable. 202 Accepted — the teardown is deferred.
     // Per plan decision 4, no resume hook is wired (deferred to #83). No cancel-of-demolition.
     [WolverinePost("/api/planets/{planetId}/buildings/{slotIndex}/demolish")]
-    public static async Task<Results<Accepted, NotFound, ForbidHttpResult, Conflict<string>>> Demolish(
+    public static async Task<Results<Accepted, ProblemHttpResult>> Demolish(
         Guid planetId,
         int slotIndex,
         ClaimsPrincipal principal,
@@ -141,23 +141,23 @@ public static class BuildingEndpoints
         var planet = stream.Aggregate;
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
-            return TypedResults.Forbid();
+            return TypedResults.Problem(statusCode: StatusCodes.Status403Forbidden);
         }
 
         // SlotIndex addresses the append-only Buildings list, so range is against the raw count.
         if (slotIndex < 0 || slotIndex >= planet.Buildings.Count)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         if (planet.Buildings[slotIndex].Status is not (BuildingStatus.Operational or BuildingStatus.Halted))
         {
-            return TypedResults.Conflict("Only a completed building can be demolished.");
+            return TypedResults.Problem(detail: "Only a completed building can be demolished.", statusCode: StatusCodes.Status409Conflict);
         }
 
         var now = timeProvider.GetUtcNow();
