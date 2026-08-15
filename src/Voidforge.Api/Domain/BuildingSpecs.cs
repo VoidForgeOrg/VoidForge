@@ -48,6 +48,10 @@ public static class BuildingSpecs
     // Fraction of full rating a Halted building draws (#69). Same 5% idle floor as a shipyard.
     public const decimal HaltedDrawFactor = 0.05m;
 
+    // How long a demolition takes from immediate shutdown to the slot-freeing teardown (#72).
+    // Balance placeholder (10 minutes, TBD during balancing).
+    public const decimal DemolitionDurationSeconds = 600m;
+
     // The stored resource a building produces into, or null for buildings with no stored output
     // (Generator, Shipyard). Drives output-storage halting (#69).
     public static ResourceType? ProducedResource(BuildingType type) => type switch
