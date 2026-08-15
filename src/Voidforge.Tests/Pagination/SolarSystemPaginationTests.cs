@@ -2,6 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Pagination;
@@ -19,7 +20,7 @@ public sealed class SolarSystemPaginationTests
     [Fact]
     public async Task ReturnsPagedEnvelopeOrderedByName()
     {
-        var apiKey = await RegisterAndGetKey();
+        var apiKey = (await _host.RegisterPlayer("Pg_Test_")).ApiKey;
 
         var page = await GetPage(apiKey, "?page=1&pageSize=5");
 
@@ -37,7 +38,7 @@ public sealed class SolarSystemPaginationTests
     [Fact]
     public async Task SecondPageHasPreviousAndDiffersFromFirst()
     {
-        var apiKey = await RegisterAndGetKey();
+        var apiKey = (await _host.RegisterPlayer("Pg_Test_")).ApiKey;
 
         var first = await GetPage(apiKey, "?page=1&pageSize=5");
         var second = await GetPage(apiKey, "?page=2&pageSize=5");
@@ -50,7 +51,7 @@ public sealed class SolarSystemPaginationTests
     [Fact]
     public async Task ClampsPageSizeToMaximum()
     {
-        var apiKey = await RegisterAndGetKey();
+        var apiKey = (await _host.RegisterPlayer("Pg_Test_")).ApiKey;
 
         var page = await GetPage(apiKey, "?pageSize=500");
 
@@ -63,7 +64,7 @@ public sealed class SolarSystemPaginationTests
     [InlineData("?page=-1")]
     public async Task RejectsInvalidParameters(string query)
     {
-        var apiKey = await RegisterAndGetKey();
+        var apiKey = (await _host.RegisterPlayer("Pg_Test_")).ApiKey;
 
         await _host.Scenario(s =>
         {
@@ -85,19 +86,5 @@ public sealed class SolarSystemPaginationTests
         var page = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
         Assert.NotNull(page);
         return page;
-    }
-
-    private async Task<string> RegisterAndGetKey()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Pg_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response.ApiKey;
     }
 }

@@ -3,6 +3,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Ships;
@@ -20,7 +21,7 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task QueueShipIsAcceptedEvenWithNoShipyard()
     {
-        var registration = await RegisterPlayer();   // homeworld has no shipyard
+        var registration = await _host.RegisterPlayer("Ship_Test_");   // homeworld has no shipyard
 
         var result = await _host.Scenario(s =>
         {
@@ -39,10 +40,10 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task PlanetResponseReportsBoundedShipCounts()
     {
-        var registration = await RegisterPlayer();
-        await QueueShip(registration, ShipType.CargoVessel);
+        var registration = await _host.RegisterPlayer("Ship_Test_");
+        await _host.QueueShip(registration, ShipType.CargoVessel);
 
-        var planet = await GetPlanet(registration);
+        var planet = await _host.GetPlanet(registration);
         Assert.Equal(0, planet.ShipCount);
         Assert.Equal(1, planet.QueueLength);
         Assert.Equal(0, planet.ActiveBuilds);   // no shipyard yet
@@ -51,10 +52,10 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task ShipQueueEndpointIsPaginated()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Ship_Test_");
         for (var i = 0; i < 3; i++)
         {
-            await QueueShip(registration, ShipType.ColonyShip);
+            await _host.QueueShip(registration, ShipType.ColonyShip);
         }
 
         var result = await _host.Scenario(s =>
@@ -74,7 +75,7 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task ShipRosterEndpointIsPaginatedAndInitiallyEmpty()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Ship_Test_");
 
         var result = await _host.Scenario(s =>
         {
@@ -92,8 +93,8 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task CancelQueuedShipRemovesIt()
     {
-        var registration = await RegisterPlayer();
-        var build = await QueueShip(registration, ShipType.ColonyShip);
+        var registration = await _host.RegisterPlayer("Ship_Test_");
+        var build = await _host.QueueShip(registration, ShipType.ColonyShip);
 
         await _host.Scenario(s =>
         {
@@ -102,14 +103,14 @@ public sealed class ShipEndpointTests
             s.StatusCodeShouldBe(200);
         });
 
-        var planet = await GetPlanet(registration);
+        var planet = await _host.GetPlanet(registration);
         Assert.Equal(0, planet.QueueLength);
     }
 
     [Fact]
     public async Task CancelUnknownBuildReturns404()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Ship_Test_");
 
         await _host.Scenario(s =>
         {
@@ -122,8 +123,8 @@ public sealed class ShipEndpointTests
     [Fact]
     public async Task QueueShipOnUnownedPlanetReturns403()
     {
-        var registration = await RegisterPlayer();
-        var foreign = await FindPlanetOtherThan(registration);
+        var registration = await _host.RegisterPlayer("Ship_Test_");
+        var foreign = await _host.FindPlanetOtherThan(registration);
 
         await _host.Scenario(s =>
         {
@@ -132,62 +133,5 @@ public sealed class ShipEndpointTests
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(403);
         });
-    }
-
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        return planet;
-    }
-
-    private async Task<Guid> FindPlanetOtherThan(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url("/api/solar-systems?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var systems = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
-        Assert.NotNull(systems);
-        return systems.Items.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Ship_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }

@@ -2,6 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Concurrency;
@@ -23,7 +24,7 @@ public sealed class SameStreamConcurrencyTests
     [Fact]
     public async Task ConcurrentCommandsOnOnePlanetConflictAs409NotServerError()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Concurrency_");
 
         // Fire batches of concurrent Queue commands at the same planet stream. With optimistic
         // concurrency a colliding append fails cleanly (409); without it the appends collide on the
@@ -50,14 +51,14 @@ public sealed class SameStreamConcurrencyTests
 
         // Consistency: exactly the winning appends landed — no lost or duplicated writes. (No shipyard,
         // so every queued ship stays Queued and none complete.)
-        var planet = await GetPlanet(registration);
+        var planet = await _host.GetPlanet(registration);
         Assert.Equal(successes, planet.QueueLength);
     }
 
     [Fact]
     public async Task HttpCommandsRacingAScheduledCompletionRemainConsistent()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Concurrency_");
 
         // Start a Drill: its construction schedules a CompleteBuildingConstruction (~5s) on this
         // planet stream — the "race partner" for the HTTP appends below.
@@ -83,10 +84,10 @@ public sealed class SameStreamConcurrencyTests
 
         // Eventual consistency: the scheduled building completion was applied — never dropped by a
         // conflict (the handler retried) — and every winning queue append landed exactly once.
-        var settled = await PollUntil(
+        var settled = await _host.PollUntil(
             registration,
             p => p.Buildings.Any(b => b.Type == BuildingType.Drill && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(30));
+            TestTimeouts.StockRecovery);
 
         Assert.Contains(settled.Buildings, b => b.Type == BuildingType.Drill && b.Status == BuildingStatus.Operational);
         Assert.Equal(successes, settled.QueueLength);
@@ -104,64 +105,9 @@ public sealed class SameStreamConcurrencyTests
     }
 
     // Fire a Queue command and return only its status code (no auto-assert).
-    private async Task<int> QueueShipStatus(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(ShipType.CargoVessel))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.IgnoreStatusCode();
-        });
-
-        return result.Context.Response.StatusCode;
-    }
-
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
-            {
-                return planet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        return planet;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Concurrency_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
-    }
+    private Task<int> QueueShipStatus(RegisterPlayerResponse registration)
+        => _host.PostForStatus(
+            registration,
+            $"/api/planets/{registration.HomeworldId}/ship-queue",
+            new QueueShipRequest(ShipType.CargoVessel));
 }

@@ -33,6 +33,23 @@ public sealed class MyTests(AppFixture fixture)
 
 This avoids booting the app per test class (Marten schema migration is slow).
 
+## Shared Helpers (`Support/`)
+
+Since #62, API-driving helpers are shared extension methods on `IAlbaHost` — do not re-declare them privately in test classes. Add missing helpers to the shared layer instead.
+
+- `Support/IntegrationApiExtensions.cs` — register/get/build/assemble/launch/poll helpers. All assert success (200) unless the name says otherwise (`PostForStatus`); polling helpers return the last-seen state on timeout so the caller's assertion reports the failure.
+- `Support/TestTimeouts.cs` — the suite's named poll cadence and deadlines (`PollInterval`, `Completion`, `StockRecovery`, `QueueDrain`, `Arrival`, `FullLoopArrival`). Use these instead of inline `TimeSpan` literals; they time out real HTTP polling and are unrelated to the app's injected `TimeProvider`.
+
+Usage shape (the class keeps its `[Collection]` + `AppFixture` wiring):
+
+```csharp
+var owner = await _host.RegisterPlayer("MySuite_");
+var shipId = await _host.BuildRosterShip(owner);
+var planet = await _host.PollUntil(owner, p => p.Buildings.Count > 0, TestTimeouts.Completion);
+```
+
+Deliberately local (not shared): race-specific arrival retries (`ClaimRaceTests`), raw-Marten world mutations (`ColonizeSecondPlanetForOwner`, `UncolonizedPlanetId`), and `PlayerRegistrationTests`' inline scenarios that assert raw registration responses.
+
 ## Known Pitfalls
 
 ### Do Not Dispose DI-Owned IDocumentStore
