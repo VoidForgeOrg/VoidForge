@@ -50,6 +50,23 @@ var planet = await _host.PollUntil(owner, p => p.Buildings.Count > 0, TestTimeou
 
 Deliberately local (not shared): race-specific arrival retries (`ClaimRaceTests`), raw-Marten world mutations (`ColonizeSecondPlanetForOwner`, `UncolonizedPlanetId`), and `PlayerRegistrationTests`' inline scenarios that assert raw registration responses.
 
+## Cascade Scenario Coverage (#71)
+
+`game-design/engine.md` §"Cascading Events" (L48–52) requires each dependency chain to resolve **within a single checkpoint** — one commit / one `RebaseRates` re-derivation — so state stays consistent. Energy is never an event; it is re-derived inside every composition-changing `Apply`, so "within a single checkpoint" means the trigger AND its downstream halts/resumes AND the energy re-derivation land in one post-commit read. The `Cascade/` suite proves the four scenarios, the edge cases, and even-split distribution; the head/tail slices they build on live in `Halting/DepletionCascadeTests`, `Halting/IngotStarvationCascadeTests`, `Planets/PlanetHaltingTests`, `Planets/PlanetEnergyTests`, and `Planets/PlanetDemolitionTests`.
+
+| engine.md item | Test | Kind |
+| --- | --- | --- |
+| Scenario 1 — ore depletes → all Drills halt → freed energy resolves overload | `Cascade/CascadeScenarioTests.DepletionOnOverloadedPlanetHaltsAllDrillsAndRecoversProductivityInOneCheckpoint` | integration |
+| Scenario 2 — ore starvation → Refinery halts → ingot buffer empties → construction + ship build halt (single flow) | `Cascade/CascadeScenarioTests.OreDepletionStarvesRefineryThenHaltsBothIngotConsumersAlongTheChain` | integration |
+| Scenario 3 — building **completes** → overload → dependent rates throttle | `Cascade/CascadeScenarioTests.BuildingCompletionTipsPlanetIntoOverloadInTheCompletionCommit` | integration |
+| Scenario 4 — demolish (endpoint) frees energy → overload resolves in the start-demolition commit | `Cascade/CascadeScenarioTests.DemolishingAConsumerResolvesOverloadInTheDemolitionCommit` | integration |
+| Edge 5 — simultaneous depletion + storage-full at one instant → one consistent, bounded, idempotent state | `Cascade/CascadeEdgeCaseTests.SimultaneousDepletionAndStorageFullResolveToOneConsistentCheckpoint` | unit |
+| Edge 6 — all producers halted (blackout) → stable on 5% idle floors, all rates 0, queries throw-free | `Cascade/CascadeEdgeCaseTests.AllProducersHaltedLeavesPlanetStableOnIdleFloors` | unit |
+| Even-split 7 — refineries share one Drill's ore (aggregate clamps to inflow; no per-consumer tracking) | `Cascade/EvenSplitContentionTests.EvenSplitClampsAggregateRefiningToTheSingleSharedDrillInflow` | unit |
+| Even-split 8 — construction + ship build share the ingot buffer → empty together, halt together | `Cascade/EvenSplitContentionTests.SharedIngotBufferEmptiesForBothConsumersAtTheSameInstant` | unit |
+
+No new machinery (design D5): all halting/depletion/demolition/ingot behaviour already exists (#69/#70/#72/#83); #71 is test-only. Integration tests use the deterministic direct-handler-invocation pattern (`InvokeHandler` + `PredictX` deadline math + pool-pinning via oversized `CargoLoadedFromStorage`) — **no wall-clock waits**. Scenario 2's full chain is intentionally multi-checkpoint (three scheduled checks); its single-checkpoint claim is scoped to the ingot-consumer tail (one `CheckIngotStarved` pauses every consumer together). Edge cases and even-split proofs are pure-domain unit slices — the individual handler commit paths are already covered, and the novel content (two evaluators at one instant; the scalar-pool clamp; a shared buffer emptying for both consumers) is an aggregate property expressed directly without the runtime-marginal integration host. Even-split 7 uses 3 refineries vs 1 drill so the `min(demand, inflow)` clamp genuinely bites (2-vs-1 is tautological — demand equals inflow at every multiplier).
+
 ## Known Pitfalls
 
 ### Do Not Dispose DI-Owned IDocumentStore
