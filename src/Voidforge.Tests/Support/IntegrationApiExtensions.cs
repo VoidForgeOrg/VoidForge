@@ -48,6 +48,13 @@ public static class IntegrationApiExtensions
     public static Task<PlanetResponse> GetPlanet(this IAlbaHost host, RegisterPlayerResponse registration)
         => host.GetPlanetById(registration, registration.HomeworldId);
 
+    /// <summary>GETs <c>/api/players/me</c> and returns the lazily-computed player score (#67).</summary>
+    public static async Task<decimal> GetScore(this IAlbaHost host, RegisterPlayerResponse asWhom)
+    {
+        var me = await host.GetJson<PlayerInfoResponse>(asWhom, "/api/players/me");
+        return me.Score;
+    }
+
     public static Task<PlanetResponse> GetPlanetById(
         this IAlbaHost host, RegisterPlayerResponse asWhom, Guid planetId)
         => host.GetJson<PlanetResponse>(asWhom, $"/api/planets/{planetId}");

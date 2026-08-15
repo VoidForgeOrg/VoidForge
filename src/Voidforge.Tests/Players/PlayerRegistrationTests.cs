@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Players;
@@ -78,6 +79,30 @@ public sealed class PlayerRegistrationTests
         Assert.NotNull(me);
         Assert.Equal(registration.PlayerId, me.Id);
         Assert.Equal(name, me.Name);
+    }
+
+    [Fact]
+    public async Task MeReportsScoreReflectingTheSeededHomeworld()
+    {
+        var registration = await _host.RegisterPlayer("Score_");
+
+        var me = await _host.GetJson<PlayerInfoResponse>(registration, "/api/players/me");
+
+        // Seeded homeworld = 1 planet + an Operational Drill + Refinery + Generator (PlayerEndpoints
+        // seeds all three at colonization). Assert the planet+buildings FLOOR from ScoringSpecs, not an
+        // exact value: the producing Drill accrues ore between the seed and this read, so resources can
+        // only push the score ABOVE the floor — exact-equality would be brittle. The exact-value proof
+        // lives in ScoreCalculatorTests (fixed pools, no live accrual).
+        var planetAndBuildingsFloor =
+            ScoringSpecs.PointsPerPlanet
+            + ScoringSpecs.BuildingPoints(BuildingType.Drill)
+            + ScoringSpecs.BuildingPoints(BuildingType.Refinery)
+            + ScoringSpecs.BuildingPoints(BuildingType.Generator);
+
+        Assert.True(me.Score > 0m, $"Score should be positive, was {me.Score}.");
+        Assert.True(
+            me.Score >= planetAndBuildingsFloor,
+            $"Score {me.Score} should be at least the planet+buildings floor {planetAndBuildingsFloor}.");
     }
 
     [Fact]
