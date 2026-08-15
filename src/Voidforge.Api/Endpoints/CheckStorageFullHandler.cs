@@ -40,7 +40,15 @@ public static class CheckStorageFullHandler
             return;
         }
 
-        await StorageHaltScheduling.ScheduleDeadlinesAsync(
-            bus, message.PlanetId, updated.PredictStorageDeadlines(message.PredictedAt));
+        // Reschedule ONLY this resource's deadline. CheckStorageFull is per-resource, but
+        // PredictStorageDeadlines returns deadlines for BOTH pools. Rescheduling all of them here
+        // would make each per-resource fire schedule the OTHER pool too, fanning out exponentially
+        // into wasteful no-op checks while the pools fill. Filtering to message.Resource keeps each
+        // check chain linear (one reschedule per fire). The mutation sites still schedule both pools
+        // once per action, so no deadline is lost.
+        var deadlines = updated.PredictStorageDeadlines(message.PredictedAt)
+            .Where(d => d.Resource == message.Resource)
+            .ToList();
+        await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, message.PlanetId, deadlines);
     }
 }
