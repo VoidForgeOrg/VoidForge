@@ -7,14 +7,14 @@ namespace Voidforge.Tests.Planets;
 public sealed class PlanetHaltingTests
 {
     // Fixed base time so checkpoint/deadline math is deterministic (no DateTimeOffset.UtcNow).
-    private static readonly DateTimeOffset Base = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _base = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     // Storage caps come from PlanetCreated: IronOre 10000, IronIngot 5000.
     private static Planet CreateColonizedPlanet()
     {
         var planet = new Planet();
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
-        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, Base));
+        planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, _base));
         return planet;
     }
 
@@ -35,15 +35,15 @@ public sealed class PlanetHaltingTests
     public void EvaluateStorageHaltsEmitsBuildingHaltedForDrillWhenOreFull()
     {
         var planet = CreateColonizedPlanet();
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill);
-        FillOreToCapacity(planet, Base);
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill);
+        FillOreToCapacity(planet, _base);
 
-        var events = planet.EvaluateStorageHalts(Base);
+        var events = planet.EvaluateStorageHalts(_base);
 
         var halt = Assert.IsType<BuildingHalted>(Assert.Single(events));
         Assert.Equal(1, halt.SlotIndex); // Generator is slot 0, Drill slot 1.
         Assert.Equal(HaltReason.OutputStorageFull, halt.Reason);
-        Assert.Equal(Base, halt.At);
+        Assert.Equal(_base, halt.At);
     }
 
     // (a') No halt while the pool has headroom.
@@ -51,9 +51,9 @@ public sealed class PlanetHaltingTests
     public void EvaluateStorageHaltsEmitsNothingWhenOreBelowCapacity()
     {
         var planet = CreateColonizedPlanet();
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill);
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill);
 
-        Assert.Empty(planet.EvaluateStorageHalts(Base));
+        Assert.Empty(planet.EvaluateStorageHalts(_base));
     }
 
     // (b) Apply(BuildingHalted) marks the slot Halted+reason, drops ore inflow to 0, and the
@@ -62,14 +62,14 @@ public sealed class PlanetHaltingTests
     public void ApplyBuildingHaltedSetsStatusDropsOreRateAndDrawsFivePercent()
     {
         var planet = CreateColonizedPlanet();
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill);
-        FillOreToCapacity(planet, Base);
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill);
+        FillOreToCapacity(planet, _base);
 
         var before = planet.GetEnergyConsumptionMw(); // Drill 20 + Generator 0.
         Assert.Equal(20m, before);
         Assert.Equal(BuildingSpecs.IronOreRatePerSecond(BuildingType.Drill), planet.IronOre.Rate);
 
-        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, Base));
+        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, _base));
 
         Assert.Equal(BuildingStatus.Halted, planet.Buildings[1].Status);
         Assert.Equal(HaltReason.OutputStorageFull, planet.Buildings[1].HaltReason);
@@ -86,16 +86,16 @@ public sealed class PlanetHaltingTests
     public void EvaluateAndApplyResumeRestoresOperationalDrillWhenOreFrees()
     {
         var planet = CreateColonizedPlanet();
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill);
-        FillOreToCapacity(planet, Base);
-        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, Base));
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill);
+        FillOreToCapacity(planet, _base);
+        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, _base));
 
         // No resume while the pool is still full.
-        Assert.Empty(planet.EvaluateStorageResumes(Base));
+        Assert.Empty(planet.EvaluateStorageResumes(_base));
 
         // Free the pool (e.g. cargo loaded away) — value drops below capacity.
         planet.IronOre = planet.IronOre with { CheckpointValue = 9000m };
-        var resumeAt = Base.AddSeconds(60);
+        var resumeAt = _base.AddSeconds(60);
 
         var events = planet.EvaluateStorageResumes(resumeAt);
         var resumed = Assert.IsType<BuildingResumed>(Assert.Single(events));
@@ -114,8 +114,8 @@ public sealed class PlanetHaltingTests
     public void PredictStorageDeadlinesReturnsFillInstantOnlyForPositiveRatePoolsBelowCapacity()
     {
         var planet = CreateColonizedPlanet();
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill); // ore rate 10, ingot rate 0.
-        var now = Base.AddSeconds(30);
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill); // ore rate 10, ingot rate 0.
+        var now = _base.AddSeconds(30);
         planet.IronOre = planet.IronOre with { CheckpointValue = 9000m, CheckpointTime = now, Rate = 10m };
 
         var deadlines = planet.PredictStorageDeadlines(now);
@@ -140,13 +140,13 @@ public sealed class PlanetHaltingTests
     {
         var planet = CreateColonizedPlanet();
         // Generator 100 MW vs 4 Drills (80) + Refinery (30) = 110 MW → overloaded, m = 100/110.
-        Place(planet, Base, BuildingType.Generator, BuildingType.Drill, BuildingType.Drill,
+        Place(planet, _base, BuildingType.Generator, BuildingType.Drill, BuildingType.Drill,
             BuildingType.Drill, BuildingType.Drill, BuildingType.Refinery);
         Assert.Equal(100m / 110m, planet.GetProductivityMultiplier());
 
         // One Drill (slot 1) halts: operational load drops to 3 Drills (60) + Refinery (30) = 90,
         // plus the halted Drill's 5% draw (1 MW) = 91 < 100 generation → m = 1.
-        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, Base));
+        planet.Apply(new BuildingHalted(1, HaltReason.OutputStorageFull, _base));
 
         Assert.Equal(91m, planet.GetEnergyConsumptionMw());
         Assert.Equal(1m, planet.GetProductivityMultiplier());
