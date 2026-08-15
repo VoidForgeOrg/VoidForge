@@ -259,11 +259,13 @@ public sealed class PlanetAggregateTests
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, placedAt));
 
-        planet.Apply(new BuildingPlaced(BuildingType.Refinery, placedAt));
+        // A Generator neither produces nor consumes ore, so it leaves the ore rate untouched (0).
+        // (A Refinery is a different story post-#70 — it drains the stored buffer; that case is
+        // covered by ApplyBuildingPlacedRefineryWithoutDrillDrainsStoredBuffer.)
         planet.Apply(new BuildingPlaced(BuildingType.Generator, placedAt));
 
         Assert.Equal(0m, planet.IronOre.Rate);
-        Assert.Equal(2, planet.Buildings.Count);
+        Assert.Single(planet.Buildings);
     }
 
     [Fact]
