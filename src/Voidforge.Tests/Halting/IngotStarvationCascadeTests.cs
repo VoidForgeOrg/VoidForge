@@ -54,6 +54,57 @@ public sealed class IngotStarvationCascadeTests
     }
 
     [Fact]
+    public async Task DrillCompletionResumesRefineryThenIngotConsumersInOneCommit()
+    {
+        var registration = await _host.RegisterPlayer("IngotStarve_Resume_");
+        var planetId = registration.HomeworldId;
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        var at = DateTimeOffset.UtcNow;
+
+        // Arrange the full scenario-2 tail: the refinery is halted InputStarved (ingot production → 0),
+        // the ingot buffer is pinned to 0, and an UnderConstruction building + an Active ship build both
+        // drain ingots. CheckIngotStarvedHandler then pauses both consumers (ConstructionHalted / Halted).
+        var (constructionIdx, shipId) = await SeedConsumers(store, planetId, at, starve: true);
+        await InvokeHandler(store, (session, bus) =>
+            CheckIngotStarvedHandler.Handle(new CheckIngotStarved(planetId, at), session, bus));
+
+        var halted = await FetchPlanet(store, planetId);
+        Assert.Equal(BuildingStatus.ConstructionHalted, halted.Buildings[constructionIdx].Status);
+        Assert.Equal(ShipBuildStatus.Halted, halted.ShipQueue.Single(b => b.Id == shipId).Status);
+
+        // Seed a fresh UnderConstruction Drill (lands right after the halted construction slot) that will
+        // complete at at+50s. The homeworld drill already keeps CurrentOreInflow() > 0, so completing this
+        // one gives CompleteBuildingConstructionHandler a BuildingCompleted to ride: it evaluates the
+        // refinery resume (ore inflow present), applies it in-memory, then evaluates the ingot-consumer
+        // resumes — all in ONE commit.
+        var triggerIdx = constructionIdx + 1;
+        var resumeAt = at.AddSeconds(50);
+        await SeedTriggerDrill(store, planetId, triggerIdx, at, resumeAt);
+
+        await InvokeHandler(store, (session, bus) =>
+            CompleteBuildingConstructionHandler.Handle(
+                new CompleteBuildingConstruction(planetId, triggerIdx, resumeAt), session, bus));
+
+        // The commit un-starved the refinery AND resumed both consumers, each with CompletesAt pushed out
+        // by exactly the paused span (resumeAt + remaining): construction was at+100s (remaining 100s) →
+        // at+150s; the ship was at+30s (remaining 30s) → at+80s.
+        var after = await FetchPlanet(store, planetId);
+        Assert.Equal(
+            BuildingStatus.Operational, after.Buildings.Single(b => b.Type == BuildingType.Refinery).Status);
+        Assert.Equal(BuildingStatus.Operational, after.Buildings[triggerIdx].Status);
+
+        var construction = after.Buildings[constructionIdx];
+        Assert.Equal(BuildingStatus.UnderConstruction, construction.Status);
+        Assert.Null(construction.HaltedAt);
+        Assert.Equal(resumeAt.AddSeconds(100), construction.CompletesAt);
+
+        var shipBuild = after.ShipQueue.Single(b => b.Id == shipId);
+        Assert.Equal(ShipBuildStatus.Active, shipBuild.Status);
+        Assert.Null(shipBuild.HaltedAt);
+        Assert.Equal(resumeAt.AddSeconds(30), shipBuild.CompletesAt);
+    }
+
+    [Fact]
     public async Task StaleCheckWhileIngotsFlowingAppendsNothing()
     {
         var registration = await _host.RegisterPlayer("IngotStarve_Stale_");
@@ -116,6 +167,22 @@ public sealed class IngotStarvationCascadeTests
         await session.SaveChangesAsync();
 
         return (constructionIdx, shipId);
+    }
+
+    // Appends a fresh UnderConstruction Drill at `slotIndex` (Apply(BuildingConstructionStarted) always
+    // lands at Buildings.Count, so slotIndex MUST equal the current count) completing at `completesAt`.
+    // Completing it is the deterministic ore-return trigger for the resume cascade. (The symmetric
+    // ingot-buffer restore via cargo delivery is a documented follow-up, mirroring the already-deferred
+    // ore cargo-resume path — so this test drives the resume through a completing Drill.)
+    private static async Task SeedTriggerDrill(
+        IDocumentStore store, Guid planetId, int slotIndex, DateTimeOffset startedAt, DateTimeOffset completesAt)
+    {
+        await using var session = store.LightweightSession();
+        var stream = await session.Events.FetchForWriting<Planet>(planetId);
+        stream.AppendMany([
+            new BuildingConstructionStarted(slotIndex, BuildingType.Drill, startedAt, completesAt, DrainPerSecond: 1m),
+        ]);
+        await session.SaveChangesAsync();
     }
 
     private static int IndexOfRefinery(Planet planet)
