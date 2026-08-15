@@ -35,6 +35,7 @@ builder.Services.AddMarten(opts =>
     opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
     opts.Projections.Snapshot<Fleet>(SnapshotLifecycle.Inline);
     opts.Schema.For<Player>().UniqueIndex(x => x.Name);
+    opts.Schema.For<WorldSeedMarker>();
 })
 .UseLightweightSessions()
 .IntegrateWithWolverine();

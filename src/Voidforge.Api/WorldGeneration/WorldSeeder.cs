@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
+using Voidforge.Api.Http;
 
 namespace Voidforge.Api.WorldGeneration;
 
@@ -23,6 +24,36 @@ public sealed partial class WorldSeeder(
         }
 
         var opts = options.Value;
+        StageWorld(session, opts);
+
+        try
+        {
+            // Insert (not Store): Store upserts and would silently overwrite; Insert issues a
+            // plain INSERT that trips the primary-key unique violation (23505) on a duplicate.
+            // Committing the marker in the SAME session as the world data makes both land in one
+            // transaction, so a losing concurrent seeder's marker AND its duplicate world roll
+            // back together — the count check above only short-circuits the common already-seeded
+            // restart; this marker is what actually arbitrates the genuine TOCTOU race.
+            session.Insert(new WorldSeedMarker { Id = WorldSeedMarker.WellKnownId });
+            await session.SaveChangesAsync(cancellationToken);
+            LogWorldSeeded(logger, opts.SolarSystemCount, opts.PlanetsPerSystem);
+        }
+        catch (Exception ex) when (MartenExceptions.IsUniqueViolation(ex))
+        {
+            // Another instance won the seed race; its world is authoritative and this seeder's
+            // whole batch rolled back. A duplicate is success, not an error — swallow ONLY the
+            // unique violation (a hosted service throwing from StartAsync aborts host startup;
+            // anything else must propagate).
+            LogWorldAlreadySeeded(logger, opts.SolarSystemCount);
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    // Stages every solar system and planet stream into the session's pending unit of work
+    // without saving — the caller commits them together with the seed marker in one transaction.
+    private static void StageWorld(IDocumentSession session, WorldGenOptions opts)
+    {
         var random = new Random();
 
         for (var s = 0; s < opts.SolarSystemCount; s++)
@@ -60,13 +91,7 @@ public sealed partial class WorldSeeder(
                 PlanetIds = planetIds,
             });
         }
-
-        await session.SaveChangesAsync(cancellationToken);
-
-        LogWorldSeeded(logger, opts.SolarSystemCount, opts.PlanetsPerSystem);
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private static decimal NextCoordinate(Random random, decimal range)
     {
