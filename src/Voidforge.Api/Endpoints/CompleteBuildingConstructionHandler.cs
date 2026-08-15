@@ -31,48 +31,70 @@ public static class CompleteBuildingConstructionHandler
         // A completing Shipyard can auto-start queued ship builds — schedule their completions.
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, message.PlanetId, events);
 
-        // A completing Drill restores ore inflow, which can un-starve a Refinery halted InputStarved
-        // (#70). Resume is composition-driven, so it must ride the SAME commit as the completion (its
-        // RebaseRates restores the Refinery's throughput atomically). AppendMany does NOT re-apply
-        // events to stream.Aggregate, so apply the completion(s) in-memory first, otherwise
-        // CurrentOreInflow() would still read the pre-completion (zero-inflow) composition and the
-        // resume would be missed. See ApplyCompletionsForResumeEvaluation for why the double-apply is
-        // safe. NOTE: the ore-buffer restore paths (cargo delivery — transport arrival and the manual
-        // unload endpoint) are a follow-up; a completing Drill is the covered case here.
-        ApplyCompletionsForResumeEvaluation(planet, events);
-        var resumes = planet.EvaluateInputStarvationResumes(message.CompletesAt);
-        if (resumes.Count > 0)
+        // Composition-driven resume cascade, riding the SAME commit as the completion (engine.md
+        // scenario 2's tail): a completing Drill restores ore inflow → a Refinery halted InputStarved
+        // resumes (#70) → ingot production returns → the ingot-starved in-flight builds resume (#83).
+        // AppendMany does NOT re-apply to stream.Aggregate, so each tier is applied in-memory before the
+        // next evaluates, else that tier reads the pre-resume composition. ApplyForResumeEvaluation
+        // documents why the in-memory apply is safe (and why ingot resumes are excluded from it). The
+        // ingot cargo-delivery resume path is deferred, symmetric to the already-unwired ore-buffer one.
+        ApplyForResumeEvaluation(planet, events);
+        var refineryResumes = planet.EvaluateInputStarvationResumes(message.CompletesAt);
+        if (refineryResumes.Count > 0)
         {
-            stream.AppendMany([.. resumes]);
+            // Apply the Refinery resumes in-memory too so IngotProduction reflects the resumed Refinery
+            // before EvaluateIngotStarvationResumes runs.
+            stream.AppendMany([.. refineryResumes]);
+            ApplyForResumeEvaluation(planet, refineryResumes);
+        }
+
+        var ingotResumes = planet.EvaluateIngotStarvationResumes(message.CompletesAt);
+        if (ingotResumes.Count > 0)
+        {
+            stream.AppendMany([.. ingotResumes]);
         }
 
         await session.SaveChangesAsync();
 
-        // A newly Operational producer changes production rates (and thus every cascade deadline).
-        // Reschedule from the FRESH post-commit aggregate — the stale `planet` above was mutated only
-        // for the in-commit resume evaluation, so read the authoritative post-commit state (#69/#70).
+        // A newly Operational producer changes production rates (and thus every cascade deadline), and a
+        // resumed build needs a fresh completion at its recomputed CompletesAt. Reschedule from the FRESH
+        // post-commit aggregate whose resumed slots/builds carry the pushed-out CompletesAt (#69/#70/#83).
         var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
         if (updated is not null)
         {
+            await ResumeScheduling.ScheduleResumedBuildsAsync(bus, message.PlanetId, updated, ingotResumes);
             await StorageHaltScheduling.ScheduleAllChecksAsync(
                 bus, message.PlanetId, updated, message.CompletesAt);
         }
     }
 
-    // Apply just the completion(s) to the in-memory aggregate so EvaluateInputStarvationResumes reads
-    // the POST-completion ore inflow (a newly Operational Drill). BuildingCompleted's Apply is purely
-    // composition-based and idempotent — it sets the slot Operational (already is, after this) and
-    // RebaseRates from the same building set — so Marten re-applying the appended completion onto this
-    // identity-mapped instance at SaveChanges lands on the identical state. Only BuildingCompleted
-    // feeds ore inflow; other completion side effects (auto-started ship builds) don't gate a
-    // Refinery's input, so they're left for Marten's commit-time apply.
-    private static void ApplyCompletionsForResumeEvaluation(Planet planet, IReadOnlyList<object> events)
+    // Applies the composition-changing events of a resume tier to the in-memory aggregate so the NEXT
+    // tier's evaluator reads the post-change rates: BuildingCompleted (a newly Operational Drill →
+    // CurrentOreInflow) feeds the Refinery-resume evaluation, and BuildingResumed (a newly Operational
+    // Refinery → IngotProduction) feeds the ingot-consumer-resume evaluation. Both Applys are absolute
+    // composition-based idempotent (set the slot Operational + RebaseRates from the same building set),
+    // so Marten re-applying the appended event onto this identity-mapped instance at SaveChanges lands
+    // on the identical state.
+    //
+    // The ingot-consumer resumes (ConstructionResumed/ShipBuildResumed) are DELIBERATELY not applied
+    // here: their Apply recomputes CompletesAt from HaltedAt and then CLEARS HaltedAt, so a second
+    // (commit-time) re-apply would read a null HaltedAt and throw — they are NOT idempotent under the
+    // double-apply. They are appended and left for Marten's single commit-time apply; their recomputed
+    // CompletesAt is read post-commit via FetchLatest (ResumeScheduling) for rescheduling. Nothing after
+    // EvaluateIngotStarvationResumes reads the in-memory aggregate, so not applying them is harmless.
+    // Auto-started ship builds (ShipConstructionStarted) also gate nothing here, so they're skipped too.
+    private static void ApplyForResumeEvaluation(Planet planet, IReadOnlyList<object> events)
     {
         foreach (var e in events)
         {
-            if (e is BuildingCompleted completed)
+            switch (e)
             {
-                planet.Apply(completed);
+                case BuildingCompleted completed:
+                    planet.Apply(completed);
+                    break;
+                case BuildingResumed resumed:
+                    planet.Apply(resumed);
+                    break;
             }
         }
     }

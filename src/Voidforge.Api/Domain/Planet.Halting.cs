@@ -143,6 +143,77 @@ public sealed partial class Planet
         return resumes;
     }
 
+    // EvaluateIngotStarvation (#83): the ingot-consumer mirror of EvaluateInputStarvation. An in-flight
+    // build pauses only in the clean zero-production case — NO ingots being produced
+    // (IngotProduction(at) == 0) AND an empty IronIngot buffer. A build still drawing from a non-empty
+    // buffer, or with refineries producing, is left alone (mirrors the zero-inflow-AND-zero-buffer ore
+    // test — avoids oscillation and the ill-defined even-split of fixed-drain consumers; production > 0
+    // but below drain retains today's clamp-only behaviour). Emits one ConstructionHalted per
+    // UnderConstruction building AND one ShipBuildHalted per Active ship build (both ingot consumers,
+    // gated by the same zero-production + empty-buffer test — a single planet-level ingot scalar drives
+    // both); [] otherwise (also the validate-on-arrival no-op for a superseded CheckIngotStarved where
+    // ingots returned).
+    public IReadOnlyList<object> EvaluateIngotStarvation(DateTimeOffset at)
+    {
+        if (IngotProduction(at) > 0 || IronIngot.GetCurrentValue(at) > 0) return [];
+
+        var halts = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            var slot = Buildings[i];
+            if (slot.Status != BuildingStatus.UnderConstruction) continue;
+            halts.Add(new ConstructionHalted(i, at));
+        }
+
+        foreach (var build in ShipQueue)
+        {
+            if (build.Status != ShipBuildStatus.Active) continue;
+            halts.Add(new ShipBuildHalted(build.Id, at));
+        }
+
+        return halts;
+    }
+
+    // EvaluateIngotStarvationResumes (#83): the ingot-consumer mirror of EvaluateInputStarvationResumes.
+    // Once ingots are genuinely restored — refineries producing again (IngotProduction(at) > 0) or the
+    // buffer refilled (IronIngot.GetCurrentValue(at) > 0) — every paused consumer resumes: one
+    // ConstructionResumed per ConstructionHalted building AND one ShipBuildResumed per Halted ship build.
+    // Both Apply methods recompute CompletesAt off the captured HaltedAt. [] while still starved (no
+    // production AND an empty buffer). Composition-driven (chained off the ore-return commit in Task 4),
+    // not check-driven; symmetric to EvaluateInputStarvationResumes.
+    public IReadOnlyList<object> EvaluateIngotStarvationResumes(DateTimeOffset at)
+    {
+        if (IngotProduction(at) <= 0 && IronIngot.GetCurrentValue(at) <= 0) return [];
+
+        var resumes = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            if (Buildings[i].Status != BuildingStatus.ConstructionHalted) continue;
+            resumes.Add(new ConstructionResumed(i, at));
+        }
+
+        foreach (var build in ShipQueue)
+        {
+            if (build.Status != ShipBuildStatus.Halted) continue;
+            resumes.Add(new ShipBuildResumed(build.Id, at));
+        }
+
+        return resumes;
+    }
+
+    // PredictIngotBufferEmpty (#83): the instant the stored IronIngot buffer empties while construction
+    // (buildings + ship builds) drains it faster than refineries produce (IronIngot.Rate < 0) — now +
+    // current / (−Rate) — or null when it is not draining (Rate >= 0) or already empty. The ingot mirror
+    // of PredictBufferEmpty; feeds the CheckIngotStarved scheduling wired in Task 3.
+    public StorageDeadline? PredictIngotBufferEmpty(DateTimeOffset now)
+    {
+        if (IronIngot.Rate >= 0) return null;
+        var current = IronIngot.GetCurrentValue(now);
+        if (current <= 0) return null;
+        var seconds = (double)(current / -IronIngot.Rate);
+        return new StorageDeadline(ResourceType.IronIngot, now.AddSeconds(seconds));
+    }
+
     // PredictBufferEmpty (#70): the instant the stored IronOre buffer empties while a refinery drains
     // it faster than drills supply (IronOre.Rate < 0) — now + current / (−Rate) — or null when the
     // buffer is not draining (Rate >= 0) or is already empty. Symmetric to PredictStorageDeadlines'
@@ -184,6 +255,39 @@ public sealed partial class Planet
     {
         var slot = Buildings[@event.SlotIndex];
         Buildings[@event.SlotIndex] = slot with { Status = BuildingStatus.Operational, HaltReason = null };
+        RebaseRates(@event.At);
+    }
+
+    // Apply(ConstructionHalted) (#83): pause an in-flight build. Status → ConstructionHalted (leaves the
+    // UnderConstruction set, so RebaseRates' constructionDrain filter drops its drain to 0 — the build
+    // consumes nothing while paused) and stamp HaltedAt. CompletesAt and ConstructionDrainPerSecond are
+    // KEPT: resume needs CompletesAt − HaltedAt for the remaining work, and the kept drain is restored on
+    // resume (it is excluded from the drain sum while ConstructionHalted, so keeping it is harmless).
+    public void Apply(ConstructionHalted @event)
+    {
+        var slot = Buildings[@event.SlotIndex];
+        Buildings[@event.SlotIndex] = slot with
+        {
+            Status = BuildingStatus.ConstructionHalted,
+            HaltedAt = @event.At,
+        };
+        RebaseRates(@event.At);
+    }
+
+    // Apply(ConstructionResumed) (#83): resume a paused build. The remaining work captured at halt was
+    // CompletesAt − HaltedAt (both non-null on a ConstructionHalted slot); rebase completion to
+    // resumeAt + remaining so the paused span is added onto the schedule. Status → UnderConstruction
+    // (RebaseRates re-adds ConstructionDrainPerSecond to the ingot drain) and clear HaltedAt.
+    public void Apply(ConstructionResumed @event)
+    {
+        var slot = Buildings[@event.SlotIndex];
+        var remaining = slot.CompletesAt!.Value - slot.HaltedAt!.Value;
+        Buildings[@event.SlotIndex] = slot with
+        {
+            Status = BuildingStatus.UnderConstruction,
+            CompletesAt = @event.At + remaining,
+            HaltedAt = null,
+        };
         RebaseRates(@event.At);
     }
 

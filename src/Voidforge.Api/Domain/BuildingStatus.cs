@@ -25,4 +25,13 @@ public enum BuildingStatus
     // position to keep SlotIndex stable, frees the slot via LiveBuildingCount, draws/produces
     // NOTHING, and must NEVER be treated as Halted.
     Demolished,
+
+    // A build paused mid-construction because ingots ran dry (#83): the IronIngot buffer emptied and no
+    // ingots are being produced. Occupies its slot (counts in LiveBuildingCount) but, being none of
+    // Operational/UnderConstruction/Halted, draws/produces NOTHING — RebaseRates' constructionDrain
+    // filter (Status == UnderConstruction) drops its drain to 0. DISTINCT from Halted, which is a
+    // COMPLETED producer paused on full storage and draws the 5% HaltedDrawFactor floor; a rating-less
+    // paused build must draw nothing, so it must NEVER be treated as Halted. Resumes to
+    // UnderConstruction with a pushed-out CompletesAt (see Apply(ConstructionResumed)).
+    ConstructionHalted,
 }
