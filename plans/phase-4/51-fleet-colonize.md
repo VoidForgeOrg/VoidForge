@@ -27,7 +27,7 @@
 
 ## File Structure
 
-```
+```text
 src/Voidforge.Api/Domain/
   Fleet.cs                              (modify — ConsumeColonyShip, RecordColonizationFailure, Applys; D9/D11 comment-label fixes)
   Planet.cs                             (modify — Claim factory + PlanetColonized checkpoint comment; AcceptCargoDelivery negative guard)

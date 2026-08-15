@@ -4,7 +4,7 @@
 
 **Goal:** Resources move physically between planets — loaded onto Cargo Vessels at assembly, delivered on Transport arrival (partial when storage is full), retryable via manual unload.
 
-**Architecture:** Cargo is fleet-level totals (D8) loaded at assembly (D7). Planet storage mutations (`CargoLoadedFromStorage`/`CargoDeliveredToStorage`) checkpoint the affected pool at `at` under #44's non-regressing semantics, adjust `CheckpointValue` clamped to `[0, capacity]`, and never touch rates. Transport arrival is the codebase's **first cross-aggregate append**: the handler fetches Fleet + destination Planet with `FetchForWriting` and commits both streams in one `SaveChangesAsync` (#39 retries a contested commit). One `CargoUnloaded` event carries accepted amounts (D9); disband refuses while cargo remains (D11).
+**Architecture:** Cargo is fleet-level totals (D8; per-ship binding is post-MVP, arriving with combat) loaded at assembly (D7). Planet storage mutations (`CargoLoadedFromStorage`/`CargoDeliveredToStorage`) checkpoint the affected pool at `at` under #44's non-regressing semantics, adjust `CheckpointValue` clamped to `[0, capacity]`, and never touch rates. Transport arrival is the codebase's first cross-aggregate append **from an asynchronous durable-message handler** (#48's assembly/disband already commit Planet + Fleet events together, but synchronously inside an endpoint): the handler fetches Fleet + destination Planet with `FetchForWriting` and commits both streams in one `SaveChangesAsync` (#39 retries a contested commit). One `CargoUnloaded` event carries accepted amounts (D9); disband refuses while cargo remains (D11).
 
 **Tech Stack:** .NET 9, Marten, Wolverine, xUnit + Alba.
 
@@ -28,7 +28,7 @@
 
 ## File Structure
 
-```
+```text
 src/Voidforge.Api/Domain/
   Fleet.cs                            (modify — cargo props, GetCargoCapacity/GetCargoLoad, UnloadCargo, D11 disband guard, Arrive contract comment)
   Planet.cs                           (modify — cargo storage Apply methods + factories, in the core file: they are pool mutations beside RebaseRates/CheckpointAllResources)
@@ -143,7 +143,7 @@ if (mission == MissionType.Transport && (cargoOre > 0 || cargoIngot > 0))
         stream.AppendOne(fleet.UnloadCargo(destinationId, delivered.IronOre, delivered.IronIngot, message.ArrivesAt));
     }
 }
-await session.SaveChangesAsync();   // ONE commit across both streams — first cross-aggregate append
+await session.SaveChangesAsync();   // ONE commit across both streams — first cross-aggregate append from an async durable-message handler
 ```
 
 (Structure the handler so the single `SaveChangesAsync` at the end covers the arrival-only path too; keep the early no-op returns for null aggregate / empty events.)

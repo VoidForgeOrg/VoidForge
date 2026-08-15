@@ -29,7 +29,7 @@
 
 ## File Structure
 
-```
+```text
 src/Voidforge.Api/Domain/
   Coordinates.cs                      (new record)
   MissionType.cs                      (new enum)
@@ -225,7 +225,7 @@ public sealed record TravelLeg(
 **Files:**
 - Create: `src/Voidforge.Api/Endpoints/LaunchMissionRequest.cs`, `src/Voidforge.Api/Endpoints/CompleteFleetArrivalHandler.cs`, `src/Voidforge.Api/Domain/Events/CompleteFleetArrival.cs`
 - Modify: `src/Voidforge.Api/Endpoints/FleetEndpoints.cs`, `FleetResponse.cs`
-- Modify: `src/Voidforge.Tests/AppFixture.cs` (add `Balance__Ships__ColonyShip__SpeedPerSecond` = `1000`, `Balance__Ships__CargoVessel__SpeedPerSecond` = `1000` so real scheduled arrivals resolve in ≤ ~4 s)
+- Modify: `src/Voidforge.Tests/AppFixture.cs` (add `Balance__Ships__ColonyShip__SpeedPerSecond` = `1000`, `Balance__Ships__CargoVessel__SpeedPerSecond` = `1000` so **travel time** stays ≤ ~4 s; handler execution can lag a further ~5 s behind `ArrivesAt` on the durability agent's default scheduled-job polling interval, so arrival tests poll with a generous deadline instead of assuming ~4 s wall-clock)
 - Test: `src/Voidforge.Tests/Travel/FleetMissionEndpointTests.cs`
 
 **Interfaces:**

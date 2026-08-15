@@ -28,7 +28,7 @@
 
 ## File Structure
 
-```
+```text
 src/Voidforge.Api/Domain/
   RosterShip.cs                      (modify — add OwnerId)
   Planet.Ships.cs                    (modify — roster mutation methods + Apply, OwnerId on completion)

@@ -156,6 +156,7 @@ Each event stream has an **inline snapshot projection** — a persisted document
 ```csharp
 opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
 opts.Projections.Snapshot<Player>(SnapshotLifecycle.Inline);
+opts.Projections.Snapshot<Fleet>(SnapshotLifecycle.Inline);
 ```
 
 These snapshots serve as both the read model (API queries load them directly) and the checkpoint for lazy calculation (see Section 5).
