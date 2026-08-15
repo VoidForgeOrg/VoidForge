@@ -227,4 +227,38 @@ public sealed class FleetEndpointTests
         var history = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets?status=Disbanded");
         Assert.Contains(history.Items, f => f.Id == fleet.Id);
     }
+
+    // #63: an unparseable ?status= is a 400 ProblemDetails, not a silently-empty list.
+    [Fact]
+    public async Task OwnFleetsRejectsUnknownStatusWith400()
+    {
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
+
+        var result = await _host.Scenario(s =>
+        {
+            s.Get.Url("/api/fleets?status=bogus");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(400);
+        });
+
+        var body = result.ReadAsText();
+        Assert.Contains("Unknown fleet status 'bogus'.", body, StringComparison.Ordinal);
+    }
+
+    // #63: a valid ?status= (case-insensitive) stays 200 and filters to exactly that status.
+    [Fact]
+    public async Task OwnFleetsFilterByValidStatusReturns200AndFilters()
+    {
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);   // freshly assembled → Stationed
+
+        // The matching status includes the fleet (lower-case proves ignoreCase parsing).
+        var stationed = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(owner, "/api/fleets?status=stationed");
+        Assert.Contains(stationed.Items, f => f.Id == fleet.Id);
+
+        // A different valid status filters it out — still 200, not an error.
+        var inTransit = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(owner, "/api/fleets?status=InTransit");
+        Assert.DoesNotContain(inTransit.Items, f => f.Id == fleet.Id);
+    }
 }

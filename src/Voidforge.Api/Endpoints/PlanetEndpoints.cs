@@ -8,7 +8,7 @@ namespace Voidforge.Api.Endpoints;
 public static class PlanetEndpoints
 {
     [WolverineGet("/api/planets/{id}")]
-    public static async Task<Results<Ok<PlanetResponse>, NotFound>> GetById(
+    public static async Task<Results<Ok<PlanetResponse>, ProblemHttpResult>> GetById(
         Guid id,
         IQuerySession session,
         TimeProvider timeProvider)
@@ -17,7 +17,7 @@ public static class PlanetEndpoints
 
         if (planet is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         return TypedResults.Ok(PlanetResponse.From(planet, timeProvider.GetUtcNow()));

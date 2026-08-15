@@ -36,7 +36,12 @@ Authentication (every request):
 
 - **Fallback policy**: `RequireAuthenticatedUser()` — all endpoints require auth by default
 - **Anonymous endpoints**: `[AllowAnonymous]` on registration, health check, Swagger
-- **Accessing player identity**: `ClaimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier)` returns the PlayerId as string
+- **Accessing player identity (D11, #74)**: the single primitive is `ClaimsPrincipal.PlayerId()` (`Auth/ClaimsPrincipalExtensions.cs`) — parses the `NameIdentifier` claim to a `Guid?` (null when absent/unparseable). This is the ONLY place that reads the claim; the former per-file `IsOwner`/`PlayerId` copies in Ship/Building/Fleet endpoints were removed.
+- **Ownership checks**: each mutation endpoint resolves `principal.PlayerId()` then compares against the target aggregate's owner — `planet.IsOwnedBy(playerId)` for planet-scoped endpoints, `fleet.OwnerId` for fleet-scoped ones (Unload checks both fleet AND planet ownership). A null id or non-owner is a **403**; an unknown aggregate is a **404** (the 404-then-403 ordering is preserved per endpoint).
+
+### Error Responses (D12, #74)
+
+Every non-2xx response across the API is a **ProblemDetails** (RFC 7807) with a uniform shape: `AddProblemDetails(CustomizeProblemDetails …)` in `Program.cs` stamps `Instance` (request path) and a `traceId` extension; `title`/`type` default from the status. Endpoints emit errors via `TypedResults.Problem(detail, statusCode)` (each `Results<Ok<T>, ProblemHttpResult>`), and the `ConcurrencyConflictExceptionHandler` writes its 409 through the same `IProblemDetailsService`. Human-readable messages live in the `detail` field. Invalid enum query params (e.g. `?status=` on `GET /api/fleets`) return a 400 ProblemDetails rather than binding-failing or silently emptying (#63).
 
 ### Post-MVP
 

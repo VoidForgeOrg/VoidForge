@@ -12,7 +12,7 @@ public static class SolarSystemEndpoints
     // Nullable int params distinguish "omitted" (null → default) from "explicitly zero"
     // (0 → rejected as invalid) so Wolverine's missing-param-as-null binding works correctly.
     [WolverineGet("/api/solar-systems")]
-    public static async Task<Results<Ok<PagedResponse<SolarSystemResponse>>, BadRequest<string>>> GetAll(
+    public static async Task<Results<Ok<PagedResponse<SolarSystemResponse>>, ProblemHttpResult>> GetAll(
         IQuerySession session,
         int? page = null,
         int? pageSize = null)
@@ -23,7 +23,7 @@ public static class SolarSystemEndpoints
 
         if (parameters is null)
         {
-            return TypedResults.BadRequest("page and pageSize must be >= 1.");
+            return TypedResults.Problem(detail: "page and pageSize must be >= 1.", statusCode: StatusCodes.Status400BadRequest);
         }
 
         var response = await session.Query<SolarSystem>()

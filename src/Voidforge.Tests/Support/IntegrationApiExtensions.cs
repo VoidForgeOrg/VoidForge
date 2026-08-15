@@ -398,4 +398,77 @@ public static class IntegrationApiExtensions
 
         throw new InvalidOperationException("No uncolonized planet found in the universe.");
     }
+
+    /// <summary>
+    /// Places a building via <c>POST /api/planets/{id}/buildings</c>, asserts 200, and returns the
+    /// post-place planet. The just-placed slot is the LAST entry in <see cref="PlanetResponse.Buildings"/>
+    /// — the Buildings list is append-only, so <c>Buildings.Count - 1</c> is its stable SlotIndex.
+    /// </summary>
+    public static async Task<PlanetResponse> PlaceBuilding(
+        this IAlbaHost host, RegisterPlayerResponse registration, BuildingType type, Guid? planetId = null)
+    {
+        var result = await host.Scenario(s =>
+        {
+            s.Post.Json(new PlaceBuildingRequest(type))
+                .ToUrl($"/api/planets/{planetId ?? registration.HomeworldId}/buildings");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(200);
+        });
+
+        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
+        Assert.NotNull(planet);
+        return planet;
+    }
+
+    /// <summary>
+    /// Cancels an in-progress construction via <c>DELETE /api/planets/{id}/buildings/{slot}/construction</c>
+    /// and asserts the 204 No Content the endpoint returns (#72); the slot becomes a Cancelled tombstone.
+    /// </summary>
+    public static async Task CancelConstruction(
+        this IAlbaHost host, RegisterPlayerResponse registration, int slotIndex, Guid? planetId = null)
+    {
+        await host.Scenario(s =>
+        {
+            s.Delete.Url($"/api/planets/{planetId ?? registration.HomeworldId}/buildings/{slotIndex}/construction");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(204);
+        });
+    }
+
+    /// <summary>
+    /// Polls the planet until a building of <paramref name="type"/> is <see cref="BuildingStatus.Halted"/>
+    /// with <paramref name="reason"/>, then returns that slot. PollUntil returns the last-seen state on
+    /// timeout, so the trailing NotNull surfaces a failure to halt as the assertion.
+    /// </summary>
+    public static async Task<BuildingSlotResponse> PollBuildingUntilHalted(
+        this IAlbaHost host, RegisterPlayerResponse registration, BuildingType type, HaltReason reason)
+    {
+        var planet = await host.PollUntil(
+            registration,
+            p => p.Buildings.Any(b => b.Type == type && b.Status == BuildingStatus.Halted && b.HaltReason == reason),
+            TestTimeouts.Completion);
+
+        var slot = planet.Buildings.FirstOrDefault(
+            b => b.Type == type && b.Status == BuildingStatus.Halted && b.HaltReason == reason);
+        Assert.NotNull(slot);
+        return slot;
+    }
+
+    /// <summary>
+    /// Polls the planet until a building of <paramref name="type"/> is back to
+    /// <see cref="BuildingStatus.Operational"/> (the resume assertion, #69), then returns that slot.
+    /// PollUntil returns the last-seen state on timeout, so the trailing NotNull surfaces a failure.
+    /// </summary>
+    public static async Task<BuildingSlotResponse> PollBuildingUntilOperational(
+        this IAlbaHost host, RegisterPlayerResponse registration, BuildingType type)
+    {
+        var planet = await host.PollUntil(
+            registration,
+            p => p.Buildings.Any(b => b.Type == type && b.Status == BuildingStatus.Operational),
+            TestTimeouts.Completion);
+
+        var slot = planet.Buildings.FirstOrDefault(b => b.Type == type && b.Status == BuildingStatus.Operational);
+        Assert.NotNull(slot);
+        return slot;
+    }
 }

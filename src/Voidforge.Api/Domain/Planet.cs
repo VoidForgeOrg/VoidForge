@@ -49,6 +49,11 @@ public sealed partial class Planet
     // same rationale as the energy getters.
     public Coordinates GetCoordinates() => new(X, Y, Z);
 
+    // Ownership predicate (D11): an uncolonized planet (null OwnerId) is owned by nobody, so
+    // this is false for every playerId. Callers resolve the caller's id via
+    // ClaimsPrincipal.PlayerId() first and forbid when it is null.
+    public bool IsOwnedBy(Guid playerId) => OwnerId == playerId;
+
     public void Apply(PlanetColonized @event)
     {
         OwnerId = @event.OwnerId;
