@@ -174,4 +174,28 @@ public sealed class PlayerRegistrationTests
         Assert.NotNull(response2);
         Assert.NotEqual(response1.HomeworldId, response2.HomeworldId);
     }
+
+    [Fact]
+    public async Task ConcurrentSameNameRegistrationsYieldOneWinnerAndConflicts()
+    {
+        var name = $"Race_{Guid.NewGuid():N}";
+
+        async Task<int> RegisterOnce()
+        {
+            var result = await _host.Scenario(s =>
+            {
+                s.Post.Json(new RegisterPlayerRequest(name)).ToUrl("/api/players/register");
+                s.IgnoreStatusCode();
+            });
+            return result.Context.Response.StatusCode;
+        }
+
+        // Fire N same-name registrations at once: the winner commits the Player.Name first, the
+        // rest trip the unique index and must come back as 409 (never a 500 that escapes).
+        var codes = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => RegisterOnce()));
+
+        Assert.Equal(1, codes.Count(c => c == 200));
+        Assert.Equal(7, codes.Count(c => c == 409));
+        Assert.DoesNotContain(codes, c => c == 500);
+    }
 }
