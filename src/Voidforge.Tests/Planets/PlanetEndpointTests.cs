@@ -3,6 +3,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Planets;
@@ -20,7 +21,7 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetSolarSystemsReturnsSeededSystems()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Planet_Test_");
 
         var result = await _host.Scenario(s =>
         {
@@ -47,7 +48,7 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetPlanetByIdReturnsSeededPlanet()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Planet_Test_");
 
         var planetResult = await _host.Scenario(s =>
         {
@@ -72,7 +73,7 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetPlanetByIdReturnsComputedValuesNotRawCheckpoint()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Planet_Test_");
 
         var planetResult = await _host.Scenario(s =>
         {
@@ -93,7 +94,7 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetPlanetByIdReturnsStartingBuildings()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Planet_Test_");
 
         var planetResult = await _host.Scenario(s =>
         {
@@ -115,7 +116,7 @@ public sealed class PlanetEndpointTests
     [Fact]
     public async Task GetPlanetByNonExistentIdReturns404()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Planet_Test_");
 
         await _host.Scenario(s =>
         {
@@ -133,19 +134,5 @@ public sealed class PlanetEndpointTests
             s.Get.Url($"/api/planets/{Guid.NewGuid()}");
             s.StatusCodeShouldBe(401);
         });
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Planet_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }

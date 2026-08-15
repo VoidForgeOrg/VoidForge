@@ -2,7 +2,7 @@ using Alba;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
-using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Buildings;
@@ -20,8 +20,8 @@ public sealed class BuildingEndpointTests
     [Fact]
     public async Task PlaceBuildingStartsConstruction()
     {
-        var registration = await RegisterPlayer();
-        var before = await GetPlanet(registration);
+        var registration = await _host.RegisterPlayer("Building_Test_");
+        var before = await _host.GetPlanet(registration);
 
         var result = await _host.Scenario(s =>
         {
@@ -48,7 +48,7 @@ public sealed class BuildingEndpointTests
     [Fact]
     public async Task UnderConstructionBuildingDrainsIngotsOverTime()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Building_Test_");
 
         await _host.Scenario(s =>
         {
@@ -58,10 +58,10 @@ public sealed class BuildingEndpointTests
             s.StatusCodeShouldBe(200);
         });
 
-        var first = await GetPlanet(registration);
+        var first = await _host.GetPlanet(registration);
         Assert.Equal(BuildingStatus.UnderConstruction, first.Buildings[^1].Status);
         await Task.Delay(1000);
-        var second = await GetPlanet(registration);
+        var second = await _host.GetPlanet(registration);
 
         // With the short test build durations, drain exceeds the homeworld's +10/s ingot
         // production, so the stored ingot value falls while UnderConstruction.
@@ -72,8 +72,8 @@ public sealed class BuildingEndpointTests
     [Fact]
     public async Task PlaceBuildingOnUnownedPlanetReturns403()
     {
-        var registration = await RegisterPlayer();
-        var foreignPlanetId = await FindPlanetOtherThan(registration);
+        var registration = await _host.RegisterPlayer("Building_Test_");
+        var foreignPlanetId = await _host.FindPlanetOtherThan(registration);
 
         await _host.Scenario(s =>
         {
@@ -87,7 +87,7 @@ public sealed class BuildingEndpointTests
     [Fact]
     public async Task PlaceBuildingOnNonExistentPlanetReturns404()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Building_Test_");
 
         await _host.Scenario(s =>
         {
@@ -112,8 +112,8 @@ public sealed class BuildingEndpointTests
     [Fact]
     public async Task PlaceBuildingInOccupiedSlotsReturns409()
     {
-        var registration = await RegisterPlayer();
-        var planet = await GetPlanet(registration);
+        var registration = await _host.RegisterPlayer("Building_Test_");
+        var planet = await _host.GetPlanet(registration);
 
         // Fill remaining slots, then the next placement must be rejected.
         var freeSlots = planet.BuildingSlotCount - planet.Buildings.Count;
@@ -135,48 +135,5 @@ public sealed class BuildingEndpointTests
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
             s.StatusCodeShouldBe(409);
         });
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        return planet;
-    }
-
-    private async Task<Guid> FindPlanetOtherThan(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url("/api/solar-systems");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var systems = await result.ReadAsJsonAsync<PagedResponse<SolarSystemResponse>>();
-        Assert.NotNull(systems);
-        var other = systems.Items.SelectMany(sys => sys.PlanetIds).First(id => id != registration.HomeworldId);
-        return other;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Building_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }
