@@ -67,6 +67,11 @@ Deliberately local (not shared): race-specific arrival retries (`ClaimRaceTests`
 
 No new machinery (design D5): all halting/depletion/demolition/ingot behaviour already exists (#69/#70/#72/#83); #71 is test-only. Integration tests use the deterministic direct-handler-invocation pattern (`InvokeHandler` + `PredictX` deadline math + pool-pinning via oversized `CargoLoadedFromStorage`) — **no wall-clock waits**. Scenario 2's full chain is intentionally multi-checkpoint (three scheduled checks); its single-checkpoint claim is scoped to the ingot-consumer tail (one `CheckIngotStarved` pauses every consumer together). Edge cases and even-split proofs are pure-domain unit slices — the individual handler commit paths are already covered, and the novel content (two evaluators at one instant; the scalar-pool clamp; a shared buffer emptying for both consumers) is an aggregate property expressed directly without the runtime-marginal integration host. Even-split 7 uses 3 refineries vs 1 drill so the `min(demand, inflow)` clamp genuinely bites (2-vs-1 is tautological — demand equals inflow at every multiplier).
 
+## Capstone & Contract Coverage (#74)
+
+- **Capstone e2e** — `Colonize/FullLoopEndToEndTests.CapstoneHaltResumeCancelRecallColonizeVerifiedThroughTheReadApi` stitches the whole Phase-5 surface into one flight (register → build economy → storage-full **halt** → transport ore away → **resume** → **cancel** a build → **recall** a fleet → **colonize**) and verifies final state through the read API. NO score assertion (D13 — scoring moved to #67/#68). Halt/resume/arrival legs use the deterministic direct-handler-invocation pattern (a real-scheduler ore-pool fill would take ~1900s); everything else runs through the real HTTP API.
+- **OpenAPI contract** — `OpenApi/OpenApiContractTests` fetches the live `/swagger/v1/swagger.json` and asserts every current route+method is present, so a new endpoint missing from the emitted doc fails the build. The committed frontend snapshot (`frontend/app/openapi/voidforge.json`) recapture + the zod client regen (#64/#41) stay parked (spec L94 — not near-free).
+
 ## Known Pitfalls
 
 ### Do Not Dispose DI-Owned IDocumentStore
