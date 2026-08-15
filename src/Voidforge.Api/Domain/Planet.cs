@@ -11,11 +11,16 @@ public sealed partial class Planet
     public string Name { get; set; } = string.Empty;
     public Guid SolarSystemId { get; set; }
     public Guid? OwnerId { get; set; }
-    public long IronOrePool { get; set; }
     public int BuildingSlotCount { get; set; }
     public decimal X { get; set; }
     public decimal Y { get; set; }
     public decimal Z { get; set; }
+    // The finite ore deposit drains as drills extract (#70): modeled as a ResourcePool so it
+    // inherits the #44 floored-elapsed/non-regressing invariant. CheckpointValue is the remaining
+    // ore; StorageCapacity is the seeded initial value, so GetCurrentValue clamps to [0, initial].
+    // Rate = -oreInflow, re-derived every RebaseRates. This is the single source of truth for the
+    // deposit — the former raw `long IronOrePool` snapshot field is gone.
+    public ResourcePool IronOreDeposit { get; set; } = new(0, 0, 0, default);
     public ResourcePool IronOre { get; set; } = new(0, 0, 0, default);
     public ResourcePool IronIngot { get; set; } = new(0, 0, 0, default);
     public IList<BuildingSlot> Buildings { get; set; } = [];
@@ -26,7 +31,12 @@ public sealed partial class Planet
     {
         Name = @event.Name;
         SolarSystemId = @event.SolarSystemId;
-        IronOrePool = @event.IronOrePool;
+        // Seed the deposit from the (still-a-long) event payload: full pool, not yet draining.
+        IronOreDeposit = new ResourcePool(
+            CheckpointValue: @event.IronOrePool,
+            Rate: 0,
+            StorageCapacity: @event.IronOrePool,
+            CheckpointTime: default);
         BuildingSlotCount = @event.BuildingSlotCount;
         IronOre = new ResourcePool(0, 0, @event.IronOreStorageCapacity, default);
         IronIngot = new ResourcePool(0, 0, @event.IronIngotStorageCapacity, default);
@@ -76,6 +86,7 @@ public sealed partial class Planet
     {
         IronOre = IronOre.Checkpoint(at);
         IronIngot = IronIngot.Checkpoint(at);
+        IronOreDeposit = IronOreDeposit.Checkpoint(at);
 
         var multiplier = GetProductivityMultiplier();
         var operational = Buildings.Where(b => b.Status == BuildingStatus.Operational).ToList();
@@ -98,6 +109,10 @@ public sealed partial class Planet
             .Where(b => b.Status == ShipBuildStatus.Active)
             .Sum(b => b.DrainPerSecond);
 
+        // The finite deposit drains at the full extraction rate (#70). GetCurrentValue floors at
+        // 0, so it never goes negative even once the pool is exhausted (depletion halting is a
+        // later task — here every drill is Operational, so oreInflow is the true draw).
+        IronOreDeposit = IronOreDeposit with { Rate = -oreInflow };
         IronOre = IronOre with { Rate = oreInflow - effectiveConsumption };
         // Construction (buildings + active ship builds) drains the ingot buffer (NOT scaled by
         // m). The rate may go negative; GetCurrentValue clamps the stored value at 0

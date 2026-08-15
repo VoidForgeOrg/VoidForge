@@ -25,7 +25,10 @@ public sealed class PlanetAggregateTests
 
         Assert.Equal("Test Planet", planet.Name);
         Assert.Equal(solarSystemId, planet.SolarSystemId);
-        Assert.Equal(50000, planet.IronOrePool);
+        // The finite deposit is seeded full, not yet draining: value and capacity both 50000.
+        Assert.Equal(50000m, planet.IronOreDeposit.CheckpointValue);
+        Assert.Equal(0m, planet.IronOreDeposit.Rate);
+        Assert.Equal(50000m, planet.IronOreDeposit.StorageCapacity);
         Assert.Equal(6, planet.BuildingSlotCount);
         Assert.Equal(0m, planet.IronOre.CheckpointValue);
         Assert.Equal(0m, planet.IronOre.Rate);
@@ -52,7 +55,8 @@ public sealed class PlanetAggregateTests
         Assert.Equal(string.Empty, planet.Name);
         Assert.Equal(Guid.Empty, planet.SolarSystemId);
         Assert.Null(planet.OwnerId);
-        Assert.Equal(0, planet.IronOrePool);
+        Assert.Equal(0m, planet.IronOreDeposit.CheckpointValue);
+        Assert.Equal(0m, planet.IronOreDeposit.StorageCapacity);
         Assert.Equal(0, planet.BuildingSlotCount);
         Assert.Equal(0m, planet.IronOre.CheckpointValue);
         Assert.Equal(0m, planet.IronOre.StorageCapacity);
