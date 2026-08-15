@@ -122,6 +122,13 @@ Stores SHA-256 hashed API keys. The raw key is returned once at registration and
 
 Groups planets into a named system at a 3D position. Created during world seeding.
 
+### WorldSeedMarker
+
+- **File**: `WorldGeneration/WorldSeedMarker.cs`
+- **Fields**: `Id` (fixed `WellKnownId` constant, the primary key)
+
+Single-row marker committed atomically with the seeded world (#46). Its fixed primary key is what makes a second concurrent `WorldSeeder` collide on `23505` instead of double-seeding — see the World Seeding transaction below.
+
 ## Relationships
 
 ```
@@ -145,9 +152,16 @@ World Seeding (atomic transaction via IHostedService):
 │    For each planet:                             │
 │      StartStream<Planet>(planetId, PlanetCreated)│
 │    Store(new SolarSystem { PlanetIds = [...] }) │
+│  Insert(new WorldSeedMarker { WellKnownId })    │  → mt_doc_worldseedmarker
 │  SaveChangesAsync()  → single DB transaction    │
 └─────────────────────────────────────────────────┘
-  Idempotent: skips if SolarSystem count > 0
+  Fast-path: skips if SolarSystem count > 0 (cheap already-seeded restart).
+  Race guard (#46): the marker and the world commit in ONE transaction, so two
+  seeders that both pass the count check can't both win — the loser's Insert trips
+  the marker's primary-key unique violation (23505, detected via
+  MartenExceptions.IsUniqueViolation) and its whole batch (marker + duplicate
+  world) rolls back atomically. The loser logs "already seeded" and returns;
+  a duplicate is success, not an error (throwing from StartAsync aborts host startup).
 ```
 
 ## Adding New Aggregates
