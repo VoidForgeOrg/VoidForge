@@ -25,6 +25,13 @@ public sealed class Fleet
     public DateTimeOffset? ArrivesAt { get; set; }
     public TravelPlan? TravelPlan { get; set; }
 
+    // Recall marker (#73): set by Apply(FleetRecalled), cleared by Apply(FleetArrived). A
+    // recalled fleet is InTransit with Mission = Move heading to its old origin — otherwise
+    // indistinguishable from a plain outbound Move — so this field drives the "already
+    // returning" 409 guard. Old snapshots deserialize null, which is correct: a fleet that
+    // predates recall was never recalled.
+    public DateTimeOffset? RecalledAt { get; set; }
+
     // Cargo snapshot (#50): decimal totals of the two cargo types. Per D8/D9, these are
     // populated by CargoLoaded, decremented by CargoUnloaded. Existing pre-#50 snapshots
     // deserialize with these 0, which is correct: a fleet that predates cargo has no cargo.
@@ -146,6 +153,46 @@ public sealed class Fleet
         DepartedAt = null;
         ArrivesAt = null;
         TravelPlan = null;
+        RecalledAt = null;
+    }
+
+    // In-transit-only (409 at the endpoint, which also rejects an already-recalled fleet).
+    // Per D10, recall turns an in-flight fleet around to head back to its origin, arriving in
+    // exactly the time already elapsed. The return plan is synthesized directly rather than
+    // via the coordinate planner — an in-transit fleet has no live position — and rides the
+    // event so replay is deterministic (mirroring FleetDeparted.Plan). The throws are
+    // defensive: the endpoint pre-checks, mirroring how Depart throws on a non-Stationed fleet.
+    public FleetRecalled Recall(DateTimeOffset now)
+    {
+        if (Status != FleetStatus.InTransit || RecalledAt is not null)
+        {
+            throw new InvalidOperationException("Only an in-transit fleet that has not already been recalled can be recalled.");
+        }
+
+        var elapsed = now - DepartedAt!.Value;
+        var returnArrivesAt = now + elapsed;
+        var returnPlan = new TravelPlan(
+            returnArrivesAt,
+            TotalDistance: TravelPlan!.TotalDistance,
+            Legs: [new TravelLeg(OriginPlanetId, TravelPlan.TotalDistance, returnArrivesAt)]);
+
+        return new FleetRecalled(returnPlan, now);
+    }
+
+    public void Apply(FleetRecalled @event)
+    {
+        // Turn around: the fleet now travels from where it was heading (prior destination)
+        // back to where it started (its original origin). Mission = Move so the arrival
+        // handler fires no colonize/transport effect — cargo and colony ship survive the
+        // return untouched. Status stays InTransit; FleetArrived clears the whole block.
+        var priorDestination = DestinationPlanetId;
+        DestinationPlanetId = OriginPlanetId;
+        OriginPlanetId = priorDestination;
+        Mission = MissionType.Move;
+        DepartedAt = @event.RecalledAt;
+        ArrivesAt = @event.ReturnPlan.ArrivesAt;
+        TravelPlan = @event.ReturnPlan;
+        RecalledAt = @event.RecalledAt;
     }
 
     // Stationed-only (409 at the endpoint). Per D11, cannot disband a fleet with cargo aboard.

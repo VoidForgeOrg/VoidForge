@@ -68,6 +68,9 @@ public sealed class FleetMissionEndpointTests
         Assert.Contains("Unknown mission type.", body, StringComparison.Ordinal);
     }
 
+    // #60: the same-destination 400 stays in force for Move/Transport (no journey to make).
+    // Colonize-in-place is the deliberate exception — covered by
+    // LaunchColonizeToCurrentLocationIsAllowedAndClaimsTheParkedPlanet below.
     [Fact]
     public async Task LaunchToCurrentLocationReturns400()
     {
@@ -82,6 +85,33 @@ public sealed class FleetMissionEndpointTests
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, owner.ApiKey);
             s.StatusCodeShouldBe(400);
         });
+    }
+
+    // #60: Colonize to the fleet's current location is allowed (unlike Move/Transport). A colony
+    // fleet parked at an uncolonized world can claim it in place — a zero-distance plan arrives
+    // immediately and the guarded claim on arrival decides the outcome.
+    [Fact]
+    public async Task LaunchColonizeToCurrentLocationIsAllowedAndClaimsTheParkedPlanet()
+    {
+        var owner = await _host.RegisterPlayer("FleetMission_Test_");
+        var colonyShipId = await _host.BuildRosterShip(owner, ShipType.ColonyShip);
+        var fleet = await _host.AssembleFleet(owner, [colonyShipId]);
+        var target = await _host.FindUncolonizedPlanet(owner);
+
+        // Park the fleet at the uncolonized world (Move consumes nothing — the colony ship survives).
+        var parked = await _host.LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Move, target);
+        Assert.Equal(FleetStatus.Stationed, parked.Status);
+        Assert.Equal(target, parked.LocationPlanetId);
+        Assert.Contains(parked.Ships, s => s.Id == colonyShipId);
+
+        // Colonize-in-place: destination == the fleet's current location (previously a 400).
+        var claimed = await _host.LaunchAndArriveInstantly(owner, fleet.Id, MissionType.Colonize, target);
+        Assert.Equal(FleetStatus.Stationed, claimed.Status);
+        Assert.Equal(target, claimed.LocationPlanetId);
+        Assert.DoesNotContain(claimed.Ships, s => s.Id == colonyShipId);   // consumed on the claim
+
+        var planet = await _host.GetPlanetById(owner, target);
+        Assert.Equal(owner.PlayerId, planet.OwnerId);
     }
 
     [Fact]
