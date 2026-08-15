@@ -208,16 +208,19 @@ public sealed class PlanetAggregateTests
     }
 
     [Fact]
-    public void ApplyBuildingPlacedRefineryDemandClampedToDrillInflow()
+    public void ApplyBuildingPlacedRefineryDemandDrawsStoredBufferWhenInflowShort()
     {
         var at = DateTimeOffset.UtcNow;
         var planet = new Planet();
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 7, 10000, 5000, 0m, 0m, 0m));
+        // Seeds a NON-empty IronOre buffer (500 stored), so the buffer-drain branch applies (#70).
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
 
         // 2 Generators (200 MW) + Drill (20 MW) + 3 Refineries (90 MW) => m = 1.
         // Drill inflow 10; 3-refinery demand 15 > inflow 10, m = 1.
-        // Effective consumption clamps to inflow 10; net ore 0; ingots 2 x 10 = 20.
+        // The stored buffer has ore, so refineries run at FULL demand (#70): they draw the buffer, so
+        // net ore = inflow 10 - demand 15 = -5 (buffer draining), and ingots = 2 x demand 15 = 30.
+        // (Under the old Phase-3 clamp this asserted net ore 0 and ingots 20.)
         planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
         planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
         planet.Apply(new BuildingPlaced(BuildingType.Drill, at));
@@ -225,24 +228,27 @@ public sealed class PlanetAggregateTests
         planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
         planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
 
-        Assert.Equal(0m, planet.IronOre.Rate);
-        Assert.Equal(20m, planet.IronIngot.Rate);
+        Assert.Equal(-5m, planet.IronOre.Rate);
+        Assert.Equal(30m, planet.IronIngot.Rate);
     }
 
     [Fact]
-    public void ApplyBuildingPlacedRefineryWithoutDrillIsIdle()
+    public void ApplyBuildingPlacedRefineryWithoutDrillDrainsStoredBuffer()
     {
         var at = DateTimeOffset.UtcNow;
         var planet = new Planet();
         planet.Apply(new PlanetCreated("P", Guid.NewGuid(), 50000, 6, 10000, 5000, 0m, 0m, 0m));
+        // Seeds a NON-empty IronOre buffer (500 stored).
         planet.Apply(new PlanetColonized(Guid.NewGuid(), 500, 100, at));
 
-        // Generator + Refinery, no Drill: no inflow, so nothing is consumed or produced.
+        // Generator + Refinery, no Drill: zero inflow, but the stored buffer has ore, so the refinery
+        // draws it down (#70). Net ore = 0 - demand 5 = -5 (buffer draining); ingots = 2 x 5 = 10.
+        // (Under the old Phase-3 clamp a drill-less refinery was idle: net ore 0, ingots 0.)
         planet.Apply(new BuildingPlaced(BuildingType.Generator, at));
         planet.Apply(new BuildingPlaced(BuildingType.Refinery, at));
 
-        Assert.Equal(0m, planet.IronOre.Rate);
-        Assert.Equal(0m, planet.IronIngot.Rate);
+        Assert.Equal(-5m, planet.IronOre.Rate);
+        Assert.Equal(10m, planet.IronIngot.Rate);
     }
 
     [Fact]

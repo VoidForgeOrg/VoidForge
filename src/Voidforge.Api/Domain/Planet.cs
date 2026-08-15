@@ -91,15 +91,23 @@ public sealed partial class Planet
         var multiplier = GetProductivityMultiplier();
         var operational = Buildings.Where(b => b.Status == BuildingStatus.Operational).ToList();
 
-        // Drill output and refinery input are both energy-throttled flows.
-        var oreInflow = operational.Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type)) * multiplier;
+        // Drill output and refinery input are both energy-throttled flows. oreInflow comes from the
+        // shared CurrentOreInflow() helper so RebaseRates (deposit drain + net ore rate) and
+        // EvaluateInputStarvation (the zero-inflow starvation test) can never drift on the formula.
+        var oreInflow = CurrentOreInflow();
         var refineryDemand = operational.Sum(b => BuildingSpecs.RefineryOreConsumptionPerSecond(b.Type)) * multiplier;
 
-        // Refineries convert the inflow, not the stored buffer: consumption is clamped to
-        // what the drills currently produce, so the net ore rate never goes negative in
-        // Phase 3 (buffer-draining + depletion cascades are Phase 5). Even-split falls out
-        // for free because the pools are planet-level scalars.
-        var effectiveConsumption = Math.Min(refineryDemand, oreInflow);
+        // Refineries draw down the STORED ore buffer, not just the current drill inflow (#70). While
+        // the IronOre buffer has ore, they run at full demand and the net ore rate goes NEGATIVE
+        // (oreInflow − refineryDemand) as the buffer drains. Only once the buffer is empty does
+        // consumption clamp back to the current inflow (the old Phase-3 behaviour), so the net rate is
+        // then never negative. The buffer-empty crossing instant is caught by a scheduled
+        // CheckInputStarved at PredictBufferEmpty's time. The buffer is checkpointed at `at` above, so
+        // IronOre.GetCurrentValue(at) is the post-checkpoint stored value. Even-split falls out for
+        // free because the pools are planet-level scalars.
+        var effectiveConsumption = IronOre.GetCurrentValue(at) > 0
+            ? refineryDemand
+            : Math.Min(refineryDemand, oreInflow);
 
         var constructionDrain = Buildings
             .Where(b => b.Status == BuildingStatus.UnderConstruction)
@@ -109,9 +117,9 @@ public sealed partial class Planet
             .Where(b => b.Status == ShipBuildStatus.Active)
             .Sum(b => b.DrainPerSecond);
 
-        // The finite deposit drains at the full extraction rate (#70). GetCurrentValue floors at
-        // 0, so it never goes negative even once the pool is exhausted (depletion halting is a
-        // later task — here every drill is Operational, so oreInflow is the true draw).
+        // The finite deposit drains at the full extraction rate (#70). GetCurrentValue floors at 0, so
+        // it never goes negative once the pool is exhausted; a depletion halt drops its drills from the
+        // Operational set, so oreInflow (and this drain) fall to 0 at that point.
         IronOreDeposit = IronOreDeposit with { Rate = -oreInflow };
         IronOre = IronOre with { Rate = oreInflow - effectiveConsumption };
         // Construction (buildings + active ship builds) drains the ingot buffer (NOT scaled by
@@ -121,6 +129,17 @@ public sealed partial class Planet
         {
             Rate = (BuildingSpecs.RefineryIngotOutputFactor * effectiveConsumption) - constructionDrain - shipBuildDrain,
         };
+    }
+
+    // Σ IronOreRatePerSecond(operational drills) × the energy productivity multiplier — the current
+    // ore inflow produced by operational drills (#70). The single source of this formula so the deposit
+    // drain / net ore rate in RebaseRates and the zero-inflow test in EvaluateInputStarvation agree.
+    private decimal CurrentOreInflow()
+    {
+        var multiplier = GetProductivityMultiplier();
+        return Buildings
+            .Where(b => b.Status == BuildingStatus.Operational)
+            .Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type)) * multiplier;
     }
 
     public void CheckpointAllResources(DateTimeOffset now)

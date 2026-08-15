@@ -102,6 +102,39 @@ public sealed partial class Planet
         return new StorageDeadline(ResourceType.IronOre, now.AddSeconds(seconds));
     }
 
+    // EvaluateInputStarvation (#70): an Operational Refinery halts InputStarved only when the planet
+    // has NO ore to feed it — zero drill inflow (no operational drill producing) AND an empty IronOre
+    // buffer. A refinery running at REDUCED throughput (some inflow, or a draining-but-still-nonempty
+    // buffer) is NOT starved and is left alone. Emits one BuildingHalted(InputStarved) per starved
+    // Refinery; [] otherwise (also the validate-on-arrival no-op for a superseded CheckInputStarved
+    // where ore has returned). oreInflow comes from CurrentOreInflow() so it matches RebaseRates.
+    public IReadOnlyList<object> EvaluateInputStarvation(DateTimeOffset at)
+    {
+        if (CurrentOreInflow() > 0 || IronOre.GetCurrentValue(at) > 0) return [];
+
+        var halts = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            var slot = Buildings[i];
+            if (slot.Status != BuildingStatus.Operational || slot.Type != BuildingType.Refinery) continue;
+            halts.Add(new BuildingHalted(i, HaltReason.InputStarved, at));
+        }
+        return halts;
+    }
+
+    // PredictBufferEmpty (#70): the instant the stored IronOre buffer empties while a refinery drains
+    // it faster than drills supply (IronOre.Rate < 0) — now + current / (−Rate) — or null when the
+    // buffer is not draining (Rate >= 0) or is already empty. Symmetric to PredictStorageDeadlines'
+    // time-to-full; feeds the CheckInputStarved scheduling wired in Task 4.
+    public StorageDeadline? PredictBufferEmpty(DateTimeOffset now)
+    {
+        if (IronOre.Rate >= 0) return null;
+        var current = IronOre.GetCurrentValue(now);
+        if (current <= 0) return null;
+        var seconds = (double)(current / -IronOre.Rate);
+        return new StorageDeadline(ResourceType.IronOre, now.AddSeconds(seconds));
+    }
+
     // PredictStorageDeadlines: per pool with positive net rate and below capacity, time-to-full.
     public IReadOnlyList<StorageDeadline> PredictStorageDeadlines(DateTimeOffset now)
     {
