@@ -1,7 +1,7 @@
 # Phase 5 — Hardening: Design Spec
 
 **Date:** 2026-08-15
-**Scope:** Storage caps & halting, resource depletion, cascading event resolution, building cancellation & demolition, fleet recall, even-split proof, and API polish with a capstone end-to-end test — plus the adjacent bug backlog (#45/#61, #46, #58, #60, #62, #63). Scoring & leaderboard are **descoped** from the phase into standalone issues [#67](https://github.com/VoidForgeOrg/VoidForge/issues/67) and [#68](https://github.com/VoidForgeOrg/VoidForge/issues/68) (see D13).
+**Scope:** Storage caps & halting, resource depletion, cascading event resolution, building cancellation & demolition, fleet recall, even-split proof, and API polish with a capstone end-to-end test — plus the adjacent bug backlog (#44, #45/#61, #46, #58, #60, #62, #63). Scoring & leaderboard are **descoped** from the phase into standalone issues [#67](https://github.com/VoidForgeOrg/VoidForge/issues/67) and [#68](https://github.com/VoidForgeOrg/VoidForge/issues/68) (see D13).
 **Builds on:** [ADR 0001](../technical-design/adr/0001-completion-event-resolution.md) (durable scheduled messages, validate-on-arrival, let-it-fire-and-no-op), `Planet.RebaseRates` (Phase 3's deterministic re-derivation), [#39](https://github.com/VoidForgeOrg/VoidForge/issues/39) (optimistic concurrency + retry), [#44](https://github.com/VoidForgeOrg/VoidForge/issues/44) (non-regressing checkpoints), Phase 4's `Fleet` aggregate and cross-aggregate single-commit arrival handling.
 **Supersedes:** `plans/phase-5-hardening.md` item 21's ship-cancel route (shipped in Phase 3 as `DELETE /api/planets/{planetId}/ship-queue/{buildId}` against a planet-level FIFO queue — the per-shipyard-slot path is stale) and item 23 (scoring — descoped, D13).
 
@@ -19,9 +19,10 @@
 | D8 | **Cancel construction frees the slot immediately, no refund** (`BuildingConstructionCancelled`) | Per the game rules. The cancelled build's ingot draw disappears in the same commit, so D6's resume evaluation can un-halt a starved neighbor atomically |
 | D9 | **Demolition is a scheduled two-step mirroring construction**: `BuildingDemolitionStarted` (immediate shutdown — zero draw, zero production, `RebaseRates`) → scheduled `CompleteBuildingDemolition` → `BuildingDemolished` (tombstone, slot freed). Duration is a `BuildingSpecs` placeholder. No cancel-of-demolition | Matches the plan ("stops functioning immediately, demolition takes time, slot freed on completion") using the one completion pattern the codebase already trusts. Cancelling a demolition is not in the plan — YAGNI |
 | D10 | **Fleet recall is a single `FleetRecalled` event plus an ordinary arrival.** `POST /api/fleets/{fleetId}/cancel`, valid only `InTransit`, 409 if already returning. The event carries a fresh return `TravelPlan` (destination = origin, travel time = time already traveled); a new `CompleteFleetArrival` is scheduled and the original goes stale via the existing validate-on-arrival stamp | `architecture.md` §306-314 already prescribes this shape. The return arrival is a normal arrival — fleet ends `Stationed` at origin, cargo intact, colony ship unconsumed, per Phase 4's D6 ("arrival always leaves the fleet Stationed"). Collapses the plan's three events into one fact plus an event that already exists |
-| D11 | **Ownership checks unify into one shared helper/endpoint filter** | Three ad-hoc implementations exist (`ShipEndpoints.IsOwner`, inline claim parsing in `BuildingEndpoints`, `FleetEndpoints.CurrentPlayerId`); Phase 5 adds several more mutation endpoints. Consolidate before multiplying the pattern |
+| D11 | **Ownership checks unify into one shared helper/endpoint filter** | Three ad-hoc implementations exist (`ShipEndpoints.IsOwner`, inline claim parsing in `BuildingEndpoints`, `FleetEndpoints.PlayerId`); Phase 5 adds several more mutation endpoints. Consolidate before multiplying the pattern |
 | D12 | **Every error response becomes a real ProblemDetails** | `AddProblemDetails()` is registered but the concurrency handler writes a bare `{ detail }` anonymous object and validations use `BadRequest<string>`. One error shape across the surface; invalid `?status=` binding (#63 → 400) is fixed under this umbrella, and wave 0's registration-race 409 gets its shape unified here |
 | D13 | **Scoring & leaderboard are descoped from Phase 5 into standalone issues [#67](https://github.com/VoidForgeOrg/VoidForge/issues/67) (lazy score) and [#68](https://github.com/VoidForgeOrg/VoidForge/issues/68) (async Leaderboard projection)** | Owner's call during this design session: the phase concentrates on engine hardening; scoring is additive read-side work with no dependency on the domain spine. The capstone e2e therefore verifies the full loop and API consistency without a score assertion — that assertion moves to #67 |
+| D14 | **#44's unresolved remainder is real wave-1 work, sequenced before depletion**: enforce non-decreasing event `at` per stream structurally (clamp at append), move `Apply(PlanetColonized)` onto the guarded non-regressing checkpoint path, and re-derive the inversion-window bound for scheduled fleet arrivals. Rewind-and-reapply stays post-MVP | Kickoff review of #44 found the post-#47 analysis documents unresolved corruption-adjacent gaps, and the depletion issue's pool-drain checkpoint math sits directly on this invariant — hardening the foundation before building on it |
 
 ## 2. Storage caps & halting
 
@@ -94,18 +95,19 @@ Folded into this issue because they touch the same validation and test surface:
 
 ## 8. Issue breakdown & sequencing
 
-Spine-first, three waves. Epic + issues get the `phase:5-hardening` label; PRs target the `phase-5` integration branch per the established workflow.
+Spine-first, three waves. Tracked by epic [#75](https://github.com/VoidForgeOrg/VoidForge/issues/75); epic + issues carry the `phase:5-hardening` label; PRs target the `phase-5` integration branch per the established workflow.
 
 | Wave | Issue | Contents | Depends on |
 |---|---|---|---|
-| 0 | Shared test helpers | Existing [#62](https://github.com/VoidForgeOrg/VoidForge/issues/62), relabeled into the phase — every later issue profits | — |
-| 0 | Startup & registration races | #45/#61 (dup-name 409) + #46 (seeder double-seed); verify-and-close #44, #40 | — |
-| 1 | Storage caps & halting | §2 (D1–D3, D6) | wave 0 helpers |
-| 1 | Resource depletion | §3 (D4) | halting |
-| 1 | Cascading scenarios & even-split proof | §4 (D5) | halting, depletion |
-| 2 | Building cancellation & demolition | §5 (D7–D9) | halting (cascade hooks) |
-| 2 | Fleet recall (+ #60, #58) | §6 (D10) | — (parallel to spine) |
-| 3 | API polish & capstone e2e | §7 (D11–D12) + #63 | all previous |
+| 0 | [#62](https://github.com/VoidForgeOrg/VoidForge/issues/62) Shared test helpers | Relabeled into the phase — every later issue profits | — |
+| 0 | [#45](https://github.com/VoidForgeOrg/VoidForge/issues/45) + [#46](https://github.com/VoidForgeOrg/VoidForge/issues/46) Startup & registration races | Dup-name 409 (#61 closed as duplicate of #45) + seeder double-seed; [#40](https://github.com/VoidForgeOrg/VoidForge/issues/40) verify-and-close (Planet split shipped in Phase 4 — finish the class-size audit) | — |
+| 1 | [#69](https://github.com/VoidForgeOrg/VoidForge/issues/69) Storage caps & halting | §2 (D1–D3, D6) | wave 0 helpers |
+| 1 | [#44](https://github.com/VoidForgeOrg/VoidForge/issues/44) Event-ordering invariant | Remainder (D14): clamp `at` at append, guard `PlanetColonized` checkpoint, re-derive arrival inversion bound | — |
+| 1 | [#70](https://github.com/VoidForgeOrg/VoidForge/issues/70) Resource depletion | §3 (D4) | halting (#69); ordering invariant (#44) |
+| 1 | [#71](https://github.com/VoidForgeOrg/VoidForge/issues/71) Cascading scenarios & even-split proof | §4 (D5) | #69, #70 |
+| 2 | [#72](https://github.com/VoidForgeOrg/VoidForge/issues/72) Building cancellation & demolition | §5 (D7–D9) | halting (#69, cascade hooks) |
+| 2 | [#73](https://github.com/VoidForgeOrg/VoidForge/issues/73) Fleet recall (+ #60, #58) | §6 (D10) | — (parallel to spine) |
+| 3 | [#74](https://github.com/VoidForgeOrg/VoidForge/issues/74) API polish & capstone e2e | §7 (D11–D12) + #63 | all previous |
 
 Descoped: **Scoring & leaderboard** → standalone issues [#67](https://github.com/VoidForgeOrg/VoidForge/issues/67) and [#68](https://github.com/VoidForgeOrg/VoidForge/issues/68) (D13).
 
