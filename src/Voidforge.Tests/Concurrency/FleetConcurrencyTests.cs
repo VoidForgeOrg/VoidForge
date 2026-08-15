@@ -125,14 +125,16 @@ public sealed class FleetConcurrencyTests
     // transient optimistic-concurrency 409 so a background collision can't fail the *arrangement*
     // (the reported flake was a non-200 thrown from an arrangement step, not the disband race).
     //
-    // Mechanism: the homeworld is seeded with an Operational Drill + Refinery + Generator
-    // (PlayerEndpoints.Register), whose live production makes registration schedule durable
-    // CheckStorageFull / CheckPoolDepleted / CheckInputStarved messages. Under Solo durability those
-    // fire on the wall clock throughout the test and append halt/resume events to the homeworld's
-    // PLANET stream. Assemble also appends to that stream (ShipsRemovedFromRoster, via
-    // FetchForWriting<Planet>), so under CI load it can lose the optimistic-concurrency guard to a
-    // cascade check that commits inside its narrow fetch→commit window; that surfaces to the caller as
-    // a transient 409 (ConcurrencyConflictExceptionHandler) — the duplicate-key retry storm #58 saw.
+    // Mechanism: the arrangement drives real appends to the homeworld PLANET stream — the ship-build
+    // completion (CompleteShipConstruction → ShipCompleted) and each commit's cascade-check scheduling
+    // (#69/#70) — and the Solo durability agent continuously polls the shared event store's outbox
+    // while every other test in the collection hammers the same tables. Assemble also appends to the
+    // homeworld stream (ShipsRemovedFromRoster, via FetchForWriting<Planet>), so under CI load it can
+    // lose its optimistic-concurrency guard to a colliding commit inside its narrow fetch→commit
+    // window; that surfaces to the caller as a transient 409 (ConcurrencyConflictExceptionHandler) —
+    // the duplicate-key retry storm #58 saw. (The seeded homeworld's own storage-full/depletion checks
+    // are scheduled minutes out and do NOT fire during a seconds-long test — the contention is
+    // background durable-message processing on the shared store, not those checks landing.)
     //
     // The collision is benign: the ship is already settled on the roster and owned by the caller. The
     // homeworld OwnerId that Apply(ShipCompleted) stamps onto each RosterShip is set by PlanetColonized
