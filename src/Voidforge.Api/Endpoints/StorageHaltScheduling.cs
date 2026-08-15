@@ -21,12 +21,14 @@ public static class StorageHaltScheduling
         }
     }
 
-    // Unified scheduling for every rate-changing MUTATION site (#70): arm ALL THREE cascade checks
+    // Unified scheduling for every rate-changing MUTATION site (#70): arm ALL FOUR cascade checks
     // from one fresh post-commit planet — storage-full (CheckStorageFull, per pool), ore-deposit
-    // depletion (CheckPoolDepleted, when the deposit is draining) and refinery buffer-empty
-    // (CheckInputStarved, when the ore buffer is draining). The per-kind ScheduleDeadlinesAsync above
+    // depletion (CheckPoolDepleted, when the deposit is draining), refinery buffer-empty
+    // (CheckInputStarved, when the ore buffer is draining) and ingot buffer-empty (CheckIngotStarved,
+    // when in-flight builds drain the ingot buffer, #83). The per-kind ScheduleDeadlinesAsync above
     // stays for the check handlers' OWN linear self-reschedule; only the mutation sites call this so
-    // the depletion → drill-halt → refinery-starvation cascade fires in production without a wall clock.
+    // the depletion → drill-halt → refinery-starvation → build-halt cascade fires in production
+    // without a wall clock.
     public static async Task ScheduleAllChecksAsync(
         IMessageBus bus, Guid planetId, Planet planet, DateTimeOffset now)
     {
@@ -42,6 +44,12 @@ public static class StorageHaltScheduling
         if (bufferEmpty is not null)
         {
             await bus.ScheduleAsync(new CheckInputStarved(planetId, bufferEmpty.At), bufferEmpty.At);
+        }
+
+        var ingotEmpty = planet.PredictIngotBufferEmpty(now);
+        if (ingotEmpty is not null)
+        {
+            await bus.ScheduleAsync(new CheckIngotStarved(planetId, ingotEmpty.At), ingotEmpty.At);
         }
     }
 }
