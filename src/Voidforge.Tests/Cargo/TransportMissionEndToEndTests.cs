@@ -1,8 +1,7 @@
 using Alba;
-using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
-using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Cargo;
@@ -24,7 +23,7 @@ namespace Voidforge.Tests.Cargo;
 [Collection(IntegrationCollection.Name)]
 public sealed class TransportMissionEndToEndTests
 {
-    private static readonly TimeSpan _arrivalTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _arrivalTimeout = TestTimeouts.Arrival;
 
     private readonly IAlbaHost _host;
 
@@ -36,17 +35,17 @@ public sealed class TransportMissionEndToEndTests
     [Fact]
     public async Task CargoRidesAMoveRoundTripThenManualUnloadRestoresHomeStorage()
     {
-        var owner = await RegisterPlayer();
-        var foreign = await RegisterPlayer();   // a real, owned "foreign" planet to Move to and back from
-        var shipId = await BuildRosterShip(owner);
+        var owner = await _host.RegisterPlayer("TransportE2E_");
+        var foreign = await _host.RegisterPlayer("TransportE2E_");   // a real, owned "foreign" planet to Move to and back from
+        var shipId = await _host.BuildRosterShip(owner);
         // Shipyard/ship construction drains ingots hard in the test host — wait for stock to
         // clear a safety margin above what's about to be loaded (mirrors CargoEndpointTests).
-        await WaitForStock(owner, 150m, 100m);
+        await _host.WaitForStock(owner, 150m, 100m);
 
-        var fleet = await AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
+        var fleet = await _host.AssembleFleet(owner, [shipId], new CargoRequest(100m, 50m));
         Assert.Equal(100m, fleet.CargoIronOre);
         Assert.Equal(50m, fleet.CargoIronIngot);
-        var afterAssemble = await GetPlanet(owner);
+        var afterAssemble = await _host.GetPlanet(owner);
 
         // Outbound leg: real scheduler, cargo rides along untouched (Move never auto-delivers).
         await LaunchAndAwaitStationedAt(owner, fleet.Id, foreign.HomeworldId);
@@ -56,7 +55,7 @@ public sealed class TransportMissionEndToEndTests
 
         // Manual unload at home: stationed, owner owns both the fleet and the planet, cargo
         // aboard — every guard on POST /api/fleets/{id}/unload is satisfied.
-        var unloaded = await Unload(owner, fleet.Id);
+        var unloaded = await _host.Unload(owner, fleet.Id);
         Assert.Equal(0m, unloaded.CargoIronOre);
         Assert.Equal(0m, unloaded.CargoIronIngot);
 
@@ -66,7 +65,7 @@ public sealed class TransportMissionEndToEndTests
         // symmetric +/- band. Since nothing drains either pool once the roster ship's build
         // completes (no active construction, shipyard idle), the only sound assertion is a
         // lower bound on the delta: the loaded amounts came back, plus whatever accrued.
-        var afterUnload = await GetPlanet(owner);
+        var afterUnload = await _host.GetPlanet(owner);
         Assert.True(
             afterUnload.IronOre.CurrentValue - afterAssemble.IronOre.CurrentValue >= 100m,
             $"Expected at least the 100 ore that was unloaded back: before={afterAssemble.IronOre.CurrentValue}, " +
@@ -83,12 +82,12 @@ public sealed class TransportMissionEndToEndTests
     private async Task<FleetResponse> LaunchAndAwaitStationedAt(
         RegisterPlayerResponse registration, Guid fleetId, Guid destinationPlanetId)
     {
-        var launched = await Launch(registration, fleetId, MissionType.Move, destinationPlanetId);
+        var launched = await _host.Launch(registration, fleetId, MissionType.Move, destinationPlanetId);
         Assert.Equal(FleetStatus.InTransit, launched.Status);
         Assert.Equal(100m, launched.CargoIronOre);
         Assert.Equal(50m, launched.CargoIronIngot);
 
-        var arrived = await PollFleetUntil(
+        var arrived = await _host.PollFleetUntil(
             registration,
             fleetId,
             f => f.Status == FleetStatus.Stationed && f.LocationPlanetId == destinationPlanetId,
@@ -99,204 +98,5 @@ public sealed class TransportMissionEndToEndTests
         Assert.Equal(100m, arrived.CargoIronOre);
         Assert.Equal(50m, arrived.CargoIronIngot);
         return arrived;
-    }
-
-    private async Task<FleetResponse> Launch(
-        RegisterPlayerResponse registration, Guid fleetId, MissionType mission, Guid destinationPlanetId)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new LaunchMissionRequest(mission, destinationPlanetId)).ToUrl($"/api/fleets/{fleetId}/missions");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<FleetResponse> Unload(RegisterPlayerResponse registration, Guid fleetId)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Url($"/api/fleets/{fleetId}/unload");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    private async Task<FleetResponse> PollFleetUntil(
-        RegisterPlayerResponse registration, Guid fleetId, Func<FleetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        FleetResponse fleet;
-        do
-        {
-            fleet = await GetJson<FleetResponse>(registration, $"/api/fleets/{fleetId}");
-            if (predicate(fleet))
-            {
-                return fleet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return fleet;
-    }
-
-    private async Task<FleetResponse> AssembleFleet(
-        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds, CargoRequest? cargo = null)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new AssembleFleetRequest(shipIds, cargo)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    // Builds an operational shipyard, queues one CargoVessel (~2s build in the test host), and
-    // polls the roster until it appears. Returns the completed ship's id.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration)
-    {
-        await BuildOperationalShipyard(registration);
-        await QueueShip(registration, ShipType.CargoVessel);
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        do
-        {
-            var roster = await GetRoster(registration);
-            if (roster.Items.Count > 0)
-            {
-                return roster.Items[0].Id;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        throw new InvalidOperationException("Ship did not complete onto the roster in time.");
-    }
-
-    private async Task BuildOperationalShipyard(RegisterPlayerResponse registration)
-    {
-        await _host.Scenario(s =>
-        {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        await PollUntil(
-            registration,
-            p => p.Buildings.Any(b => b.Type == BuildingType.Shipyard && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(20));
-    }
-
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PagedResponse<RosterShipResponse>> GetRoster(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}/ships?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var roster = await result.ReadAsJsonAsync<PagedResponse<RosterShipResponse>>();
-        Assert.NotNull(roster);
-        return roster;
-    }
-
-    // Waits for the homeworld's stored ore/ingot to reach at least the given amounts.
-    // Necessary because shipyard/ship construction (test-host drain rates) can crush the
-    // ingot pool to near zero for several seconds before production recovers it.
-    private async Task WaitForStock(RegisterPlayerResponse registration, decimal minOre, decimal minIngot)
-    {
-        var planet = await PollUntil(
-            registration,
-            p => p.IronOre.CurrentValue >= minOre && p.IronIngot.CurrentValue >= minIngot,
-            TimeSpan.FromSeconds(30));
-
-        Assert.True(
-            planet.IronOre.CurrentValue >= minOre && planet.IronIngot.CurrentValue >= minIngot,
-            $"Stock did not recover in time: ore={planet.IronOre.CurrentValue} (need {minOre}), " +
-            $"ingot={planet.IronIngot.CurrentValue} (need {minIngot}).");
-    }
-
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
-            {
-                return planet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-        => await GetJson<PlanetResponse>(registration, $"/api/planets/{registration.HomeworldId}");
-
-    private async Task<T> GetJson<T>(RegisterPlayerResponse registration, string url)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url(url);
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<T>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"TransportE2E_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }
