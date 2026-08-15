@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Marten;
+using Marten.Events;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 using Voidforge.Api.Balance;
@@ -101,6 +102,7 @@ public static class FleetEndpoints
         AssembleFleetRequest request,
         ClaimsPrincipal principal,
         IDocumentSession session,
+        IMessageBus bus,
         IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
@@ -132,8 +134,7 @@ public static class FleetEndpoints
         var now = timeProvider.GetUtcNow();
         var balance = balanceOptions.Value;
 
-        // Cargo additions (spec §2.3): null/both-zero skips validation; see ValidateCargo
-        // for the negative/capacity/ownership/stored order.
+        // Cargo additions (spec §2.3): null/both-zero skips validation (see ValidateCargo).
         var cargo = request.Cargo;
         var wantsCargo = cargo is not null && (cargo.IronOre != 0m || cargo.IronIngot != 0m);
         if (wantsCargo)
@@ -151,12 +152,16 @@ public static class FleetEndpoints
         var fleetEvents = new List<object> { Fleet.Assemble(playerId!.Value, planetId, ships, now) };
         if (wantsCargo)
         {
-            stream.AppendOne(planet.LoadCargoFromStorage(fleetId, cargo!.IronOre, cargo.IronIngot, now));
-            fleetEvents.Add(new CargoLoaded(cargo.IronOre, cargo.IronIngot, now));
+            AppendCargoLoad(stream, planet, fleetId, cargo!, fleetEvents, now);
         }
 
         session.Events.StartStream<Fleet>(fleetId, [.. fleetEvents]);
         await session.SaveChangesAsync();
+
+        if (wantsCargo)
+        {
+            await RescheduleStorageFullChecks(session, bus, planetId, now);
+        }
 
         var fleet = await session.Events.FetchLatest<Fleet>(fleetId);
         return TypedResults.Ok(FleetResponse.From(fleet!, t => balance.Ships.For(t).CargoCapacity));
@@ -444,6 +449,38 @@ public static class FleetEndpoints
         }
 
         return null;
+    }
+
+    // Loads the requested cargo off the planet's storage onto the new fleet (spec §2.3) and
+    // adds the Fleet-side CargoLoaded to fleetEvents. Per D6 (#69), the freed output storage may
+    // let a producer halted OutputStorageFull resume: EvaluateStorageResumesAfterLoad reads the
+    // POST-load pool values WITHOUT mutating `planet` (which must stay pristine until commit —
+    // UseIdentityMapForAggregates re-applies the appended load onto this very instance at
+    // SaveChanges), and any BuildingResumed is appended to the planet stream so its RebaseRates
+    // restores the producer's rate atomically with the load. Kept out of Assemble for MA0051.
+    private static void AppendCargoLoad(
+        IEventStream<Planet> stream, Planet planet, Guid fleetId, CargoRequest cargo,
+        List<object> fleetEvents, DateTimeOffset now)
+    {
+        stream.AppendOne(planet.LoadCargoFromStorage(fleetId, cargo.IronOre, cargo.IronIngot, now));
+        fleetEvents.Add(new CargoLoaded(cargo.IronOre, cargo.IronIngot, now));
+
+        var resumes = planet.EvaluateStorageResumesAfterLoad(cargo.IronOre, cargo.IronIngot, now);
+        if (resumes.Count > 0)
+        {
+            stream.AppendMany([.. resumes]);
+        }
+    }
+
+    // After a cargo load commits (#69): the load lowered the pool and may have resumed a producer
+    // (new positive rate), so reschedule storage-full checks from the post-commit state — a
+    // resumed producer must re-halt when it refills. Mirrors the other rate-changing commit sites.
+    private static async Task RescheduleStorageFullChecks(
+        IDocumentSession session, IMessageBus bus, Guid planetId, DateTimeOffset now)
+    {
+        var updatedPlanet = await session.Events.FetchLatest<Planet>(planetId);
+        await StorageHaltScheduling.ScheduleDeadlinesAsync(
+            bus, planetId, updatedPlanet!.PredictStorageDeadlines(now));
     }
 
     private static Guid? PlayerId(ClaimsPrincipal principal)
