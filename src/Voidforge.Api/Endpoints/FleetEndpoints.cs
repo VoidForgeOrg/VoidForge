@@ -3,6 +3,7 @@ using Marten;
 using Marten.Events;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
+using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
@@ -45,7 +46,7 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        var playerId = PlayerId(principal);
+        var playerId = principal.PlayerId();
         if (playerId != fleet.OwnerId)
         {
             return TypedResults.Forbid();
@@ -126,7 +127,7 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        var playerId = PlayerId(principal);
+        var playerId = principal.PlayerId();
         var shipsError = ResolveOwnedShips(planet, request.ShipIds, playerId, out var ships);
         if (shipsError is not null)
         {
@@ -186,7 +187,7 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        if (PlayerId(principal) != fleet.OwnerId)
+        if (principal.PlayerId() != fleet.OwnerId)
         {
             return TypedResults.Forbid();
         }
@@ -240,7 +241,7 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        if (PlayerId(principal) != fleet.OwnerId)
+        if (principal.PlayerId() != fleet.OwnerId)
         {
             return TypedResults.Forbid();
         }
@@ -288,7 +289,7 @@ public static class FleetEndpoints
             return TypedResults.NotFound();
         }
 
-        if (PlayerId(principal) != fleet.OwnerId)
+        if (principal.PlayerId() != fleet.OwnerId)
         {
             return TypedResults.Forbid();
         }
@@ -307,7 +308,7 @@ public static class FleetEndpoints
         var planet = planetStream.Aggregate
             ?? throw new InvalidOperationException($"Fleet {fleetId} is stationed at unknown planet {fleet.LocationPlanetId}.");
 
-        if (planet.OwnerId != PlayerId(principal))
+        if (planet.OwnerId != principal.PlayerId())
         {
             return TypedResults.Forbid();
         }
@@ -343,7 +344,7 @@ public static class FleetEndpoints
             return TypedResults.BadRequest("page and pageSize must be >= 1.");
         }
 
-        var playerId = PlayerId(principal);
+        var playerId = principal.PlayerId();
         var query = session.Query<Fleet>().Where(f => f.OwnerId == playerId);
         query = status is null
             ? query.Where(f => f.Status != FleetStatus.Disbanded)
@@ -534,7 +535,4 @@ public static class FleetEndpoints
         var updatedPlanet = await session.Events.FetchLatest<Planet>(planetId);
         await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updatedPlanet!, now);
     }
-
-    private static Guid? PlayerId(ClaimsPrincipal principal)
-        => Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 }

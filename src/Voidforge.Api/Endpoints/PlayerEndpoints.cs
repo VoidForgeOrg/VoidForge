@@ -184,8 +184,7 @@ public static class PlayerEndpoints
         ClaimsPrincipal principal,
         IQuerySession session)
     {
-        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!Guid.TryParse(idClaim, out var playerId))
+        if (principal.PlayerId() is not { } playerId)
         {
             return TypedResults.NotFound();
         }

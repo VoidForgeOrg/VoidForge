@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
+using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
@@ -36,7 +37,7 @@ public static class BuildingEndpoints
             return TypedResults.NotFound();
         }
 
-        if (!IsOwner(principal, planet))
+        if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
             return TypedResults.Forbid();
         }
@@ -91,7 +92,7 @@ public static class BuildingEndpoints
             return TypedResults.NotFound();
         }
 
-        if (!IsOwner(principal, planet))
+        if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
             return TypedResults.Forbid();
         }
@@ -143,7 +144,7 @@ public static class BuildingEndpoints
             return TypedResults.NotFound();
         }
 
-        if (!IsOwner(principal, planet))
+        if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
             return TypedResults.Forbid();
         }
@@ -175,11 +176,5 @@ public static class BuildingEndpoints
         // checks from the post-commit state (#69/#70).
         await StorageHaltScheduling.ScheduleAllChecksAsync(bus, planetId, updated!, now);
         return TypedResults.Accepted($"/api/planets/{planetId}");
-    }
-
-    private static bool IsOwner(ClaimsPrincipal principal, Planet planet)
-    {
-        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(idClaim, out var playerId) && planet.OwnerId == playerId;
     }
 }

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Marten;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
+using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
@@ -34,7 +35,7 @@ public static class ShipEndpoints
             return TypedResults.NotFound();
         }
 
-        if (!IsOwner(principal, planet))
+        if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
             return TypedResults.Forbid();
         }
@@ -73,7 +74,7 @@ public static class ShipEndpoints
             return TypedResults.NotFound();
         }
 
-        if (!IsOwner(principal, planet))
+        if (principal.PlayerId() is not { } playerId || !planet.IsOwnedBy(playerId))
         {
             return TypedResults.Forbid();
         }
@@ -157,11 +158,5 @@ public static class ShipEndpoints
         var response = ordered.ToPagedResponse(parameters,
             s => new RosterShipResponse(s.Id, s.Type, s.CompletedAt, s.OwnerId));
         return TypedResults.Ok(response);
-    }
-
-    private static bool IsOwner(ClaimsPrincipal principal, Planet planet)
-    {
-        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        return Guid.TryParse(idClaim, out var playerId) && planet.OwnerId == playerId;
     }
 }
