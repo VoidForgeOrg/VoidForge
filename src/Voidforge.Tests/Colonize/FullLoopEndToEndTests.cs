@@ -142,6 +142,81 @@ public sealed class FullLoopEndToEndTests
         Assert.Equal(_colonizeCargoIronIngot + _transportCargoIronIngot, colonyAfterTransport.IronIngot.CurrentValue);
     }
 
+    // #67 (score acceptance): register -> build an economy -> construct ships -> colonize, reading
+    // GET /api/players/me at three checkpoints and asserting the lazily-computed score REFLECTS the
+    // acquired assets.
+    //
+    // On assertion strategy (deliberate — the exact-value proof lives in ScoreCalculatorTests, which
+    // uses fixed pools with no live accrual):
+    //   * Every checkpoint asserts a computed LOWER BOUND from ScoringSpecs (planets + buildings +
+    //     ships only). Resource contributions are >= 0, so the durable-asset floor is always safe.
+    //   * We assert a STRICT increase ONLY for the colonize step (afterShips < afterColonize): it is
+    //     genuinely monotonic — between those two reads nothing is constructed (no resource drain),
+    //     the consumed Colony Ship (-ShipPoints) is outweighed by the new planet (+PointsPerPlanet),
+    //     and the loaded cargo merely MOVES homeworld -> fleet -> colony (all still owned, so the
+    //     resource term is conserved and only grows as the homeworld keeps producing).
+    //   * We do NOT assert register < afterShips: building the Shipyard + two ships DRAINS ore/ingot
+    //     from the homeworld, so the resource term can fall further than the +durable gain rises —
+    //     an exact/strict comparison there would be brittle. The lower-bound check covers it instead.
+    [Fact]
+    public async Task ScoreReflectsAssetsAcquiredAcrossTheFullLoop()
+    {
+        var settler = await _host.RegisterPlayer("ScoreLoopE2E_");
+        var homeworld = await _host.GetPlanet(settler);
+
+        // Checkpoint 1 — freshly seeded homeworld: 1 planet + Operational Drill + Refinery + Generator.
+        var registerFloor =
+            ScoringSpecs.PointsPerPlanet
+            + ScoringSpecs.BuildingPoints(BuildingType.Drill)
+            + ScoringSpecs.BuildingPoints(BuildingType.Refinery)
+            + ScoringSpecs.BuildingPoints(BuildingType.Generator);
+        var scoreAfterRegister = await _host.GetScore(settler);
+        Assert.True(
+            scoreAfterRegister >= registerFloor,
+            $"After register, score {scoreAfterRegister} should be >= planet+buildings floor {registerFloor}.");
+
+        // Build economy: a Shipyard (placed by the first BuildRosterShip) plus a Colony Ship and a
+        // Cargo Vessel on the roster.
+        var colonyShipId = await _host.BuildRosterShip(settler, ShipType.ColonyShip);
+        var cargoVesselId = await _host.BuildRosterShip(settler, ShipType.CargoVessel);
+        await _host.WaitForStock(settler, 150m, 100m);
+
+        // Checkpoint 2 — floor now includes the Shipyard and both roster ships.
+        var shipsFloor =
+            registerFloor
+            + ScoringSpecs.BuildingPoints(BuildingType.Shipyard)
+            + ScoringSpecs.ShipPoints(ShipType.ColonyShip)
+            + ScoringSpecs.ShipPoints(ShipType.CargoVessel);
+        var scoreAfterShips = await _host.GetScore(settler);
+        Assert.True(
+            scoreAfterShips >= shipsFloor,
+            $"After building ships, score {scoreAfterShips} should be >= floor {shipsFloor}.");
+
+        // Colonize a planet in ANOTHER system with both ships aboard: the Colony Ship is consumed on
+        // the claim, the Cargo Vessel survives in a Stationed fleet at the new colony (NOT disbanded,
+        // so it keeps counting), and the loaded cargo is delivered into the (owned) colony.
+        var colonizeFleet = await _host.AssembleFleet(
+            settler, [colonyShipId, cargoVesselId], new CargoRequest(_colonizeCargoIronOre, _colonizeCargoIronIngot));
+        var destinationId = await _host.FindUncolonizedPlanet(settler, excludeSystemId: homeworld.SolarSystemId);
+        var arrived = await _host.LaunchAndArriveInstantly(
+            settler, colonizeFleet.Id, MissionType.Colonize, destinationId);
+        Assert.Equal(FleetStatus.Stationed, arrived.Status);
+
+        // Checkpoint 3 — a SECOND owned planet appears. Strictly greater than checkpoint 2 (see the
+        // assertion-strategy note above) and clears the recomputed floor: +1 planet, -Colony Ship.
+        var colonizeFloor =
+            shipsFloor
+            + ScoringSpecs.PointsPerPlanet
+            - ScoringSpecs.ShipPoints(ShipType.ColonyShip);
+        var scoreAfterColonize = await _host.GetScore(settler);
+        Assert.True(
+            scoreAfterColonize > scoreAfterShips,
+            $"After colonizing, score {scoreAfterColonize} should strictly exceed the pre-colonize score {scoreAfterShips}.");
+        Assert.True(
+            scoreAfterColonize >= colonizeFloor,
+            $"After colonizing, score {scoreAfterColonize} should be >= floor {colonizeFloor}.");
+    }
+
     // #74 Task 4 (D13, capstone): the whole Phase-5 surface stitched into ONE cohesive flight,
     // verified through the READ API — register -> build an economy -> a producer HALTS on
     // storage-full (#69) -> transport ore away -> the producer RESUMES (#69/D6) -> CANCEL a build

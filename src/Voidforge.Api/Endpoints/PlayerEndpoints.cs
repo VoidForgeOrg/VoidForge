@@ -11,6 +11,7 @@ using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Http;
+using Voidforge.Api.Scoring;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
 using Wolverine.Http;
@@ -182,7 +183,9 @@ public static class PlayerEndpoints
     [WolverineGet("/api/players/me")]
     public static async Task<Results<Ok<PlayerInfoResponse>, ProblemHttpResult>> Me(
         ClaimsPrincipal principal,
-        IQuerySession session)
+        IQuerySession session,
+        ScoreCalculator scoreCalculator,
+        TimeProvider timeProvider)
     {
         if (principal.PlayerId() is not { } playerId)
         {
@@ -195,7 +198,14 @@ public static class PlayerEndpoints
             return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
-        return TypedResults.Ok(new PlayerInfoResponse(player.Id, player.Name, player.RegisteredAt));
+        // Lazy score (#67): materialize everything the player currently owns and let ScoreCalculator
+        // evaluate it at query-time `now` — resource pools are read from checkpoints, never a stored
+        // stale field (acceptance criterion). The Disbanded-fleet filter lives inside Extract.
+        var ownedPlanets = await session.Query<Planet>().Where(p => p.OwnerId == playerId).ToListAsync();
+        var ownedFleets = await session.Query<Fleet>().Where(f => f.OwnerId == playerId).ToListAsync();
+        var score = scoreCalculator.Compute(ownedPlanets, ownedFleets, timeProvider.GetUtcNow());
+
+        return TypedResults.Ok(new PlayerInfoResponse(player.Id, player.Name, player.RegisteredAt, score));
     }
 
     private static string GenerateApiKey()
