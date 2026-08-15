@@ -61,6 +61,47 @@ public sealed partial class Planet
         return events;
     }
 
+    // EvaluateDepletion (#70): once the finite ore deposit is empty, every Operational Drill halts
+    // PERMANENTLY. Emits PlanetResourceDepleted first (pins the deposit to 0), then one
+    // BuildingHalted(ResourceDepleted) per operational Drill — each Apply is independent, so the
+    // order is purely for readability. Permanence is free: EvaluateStorageResumes only un-halts
+    // HaltReason.OutputStorageFull, so a ResourceDepleted drill is skipped by every resume evaluator.
+    // Validate-on-arrival no-op ([]) if the deposit still has ore or no Drill is operational (a
+    // superseded scheduled CheckPoolDepleted).
+    public IReadOnlyList<object> EvaluateDepletion(DateTimeOffset at)
+    {
+        if (IronOreDeposit.GetCurrentValue(at) > 0) return [];
+
+        var drillHalts = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            var slot = Buildings[i];
+            if (slot.Status != BuildingStatus.Operational || slot.Type != BuildingType.Drill) continue;
+            drillHalts.Add(new BuildingHalted(i, HaltReason.ResourceDepleted, at));
+        }
+
+        if (drillHalts.Count == 0) return [];
+
+        var events = new List<object> { new PlanetResourceDepleted(ResourceType.IronOre, at) };
+        events.AddRange(drillHalts);
+        return events;
+    }
+
+    // PredictDepletionDeadline (#70): the instant the finite ore deposit empties at the current
+    // extraction rate — now + remaining / extractionRate — or null when it is not draining (no
+    // operational Drill → deposit Rate 0) or already empty. IronOreDeposit.Rate is -oreInflow, so
+    // extractionRate = -Rate is the positive drain. Symmetric to PredictStorageDeadlines; feeds the
+    // CheckPoolDepleted scheduling wired in Task 4.
+    public StorageDeadline? PredictDepletionDeadline(DateTimeOffset now)
+    {
+        var extractionRate = -IronOreDeposit.Rate;
+        if (extractionRate <= 0) return null;
+        var remaining = IronOreDeposit.GetCurrentValue(now);
+        if (remaining <= 0) return null;
+        var seconds = (double)(remaining / extractionRate);
+        return new StorageDeadline(ResourceType.IronOre, now.AddSeconds(seconds));
+    }
+
     // PredictStorageDeadlines: per pool with positive net rate and below capacity, time-to-full.
     public IReadOnlyList<StorageDeadline> PredictStorageDeadlines(DateTimeOffset now)
     {
@@ -90,5 +131,15 @@ public sealed partial class Planet
         var slot = Buildings[@event.SlotIndex];
         Buildings[@event.SlotIndex] = slot with { Status = BuildingStatus.Operational, HaltReason = null };
         RebaseRates(@event.At);
+    }
+
+    // Apply(PlanetResourceDepleted) (#70): pin the deposit to empty at the depletion instant. The
+    // drill halts ride alongside as separate BuildingHalted events (see EvaluateDepletion), each
+    // with its own Apply that drops the drill from the Operational set — so RebaseRates re-derives
+    // oreInflow → 0 and the deposit's drain Rate → 0. No RebaseRates here: this event does not
+    // change building composition, it only checkpoints the deposit value.
+    public void Apply(PlanetResourceDepleted @event)
+    {
+        IronOreDeposit = IronOreDeposit.Checkpoint(@event.At) with { CheckpointValue = 0m };
     }
 }
