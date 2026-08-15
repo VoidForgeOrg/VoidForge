@@ -88,26 +88,12 @@ public sealed partial class Planet
         IronIngot = IronIngot.Checkpoint(at);
         IronOreDeposit = IronOreDeposit.Checkpoint(at);
 
-        var multiplier = GetProductivityMultiplier();
-        var operational = Buildings.Where(b => b.Status == BuildingStatus.Operational).ToList();
-
-        // Drill output and refinery input are both energy-throttled flows. oreInflow comes from the
-        // shared CurrentOreInflow() helper so RebaseRates (deposit drain + net ore rate) and
-        // EvaluateInputStarvation (the zero-inflow starvation test) can never drift on the formula.
+        // Drill output and refinery consumption are energy-throttled flows sourced from the shared
+        // CurrentOreInflow() / EffectiveOreConsumption(at) helpers, so RebaseRates (deposit drain, net
+        // ore rate, ingot production) and the starvation tests (EvaluateInputStarvation,
+        // EvaluateIngotStarvation) can never drift on the formulae.
         var oreInflow = CurrentOreInflow();
-        var refineryDemand = operational.Sum(b => BuildingSpecs.RefineryOreConsumptionPerSecond(b.Type)) * multiplier;
-
-        // Refineries draw down the STORED ore buffer, not just the current drill inflow (#70). While
-        // the IronOre buffer has ore, they run at full demand and the net ore rate goes NEGATIVE
-        // (oreInflow − refineryDemand) as the buffer drains. Only once the buffer is empty does
-        // consumption clamp back to the current inflow (the old Phase-3 behaviour), so the net rate is
-        // then never negative. The buffer-empty crossing instant is caught by a scheduled
-        // CheckInputStarved at PredictBufferEmpty's time. The buffer is checkpointed at `at` above, so
-        // IronOre.GetCurrentValue(at) is the post-checkpoint stored value. Even-split falls out for
-        // free because the pools are planet-level scalars.
-        var effectiveConsumption = IronOre.GetCurrentValue(at) > 0
-            ? refineryDemand
-            : Math.Min(refineryDemand, oreInflow);
+        var effectiveConsumption = EffectiveOreConsumption(at);
 
         var constructionDrain = Buildings
             .Where(b => b.Status == BuildingStatus.UnderConstruction)
@@ -122,9 +108,9 @@ public sealed partial class Planet
         // Operational set, so oreInflow (and this drain) fall to 0 at that point.
         IronOreDeposit = IronOreDeposit with { Rate = -oreInflow };
         IronOre = IronOre with { Rate = oreInflow - effectiveConsumption };
-        // Construction (buildings + active ship builds) drains the ingot buffer (NOT scaled by
-        // m). The rate may go negative; GetCurrentValue clamps the stored value at 0
-        // (zero-ingot halting is Phase 5).
+        // Construction (buildings + active ship builds) drains the ingot buffer (NOT scaled by m). The
+        // rate may go negative; GetCurrentValue clamps the stored value at 0, and #83 pauses the drain
+        // (ConstructionHalted) once the buffer is empty and no ingots flow.
         IronIngot = IronIngot with
         {
             Rate = (BuildingSpecs.RefineryIngotOutputFactor * effectiveConsumption) - constructionDrain - shipBuildDrain,
@@ -141,6 +127,32 @@ public sealed partial class Planet
             .Where(b => b.Status == BuildingStatus.Operational)
             .Sum(b => BuildingSpecs.IronOreRatePerSecond(b.Type)) * multiplier;
     }
+
+    // The ore actually consumed by operational refineries this instant (#70). Refineries draw down the
+    // STORED IronOre buffer, not just current drill inflow: while the buffer has ore they run at full
+    // demand (net ore rate goes NEGATIVE as the buffer drains); once the buffer is empty, consumption
+    // clamps back to the current inflow (the Phase-3 behaviour), so the net rate is then never negative.
+    // The single source of this formula so RebaseRates (net ore rate + ingot production) and the ingot
+    // production test in EvaluateIngotStarvation can never drift. Reads IronOre.GetCurrentValue(at) — in
+    // RebaseRates the buffer is already checkpointed at `at`, so that is the post-checkpoint stored value.
+    // Even-split falls out for free because the pools are planet-level scalars.
+    private decimal EffectiveOreConsumption(DateTimeOffset at)
+    {
+        var multiplier = GetProductivityMultiplier();
+        var refineryDemand = Buildings
+            .Where(b => b.Status == BuildingStatus.Operational)
+            .Sum(b => BuildingSpecs.RefineryOreConsumptionPerSecond(b.Type)) * multiplier;
+        return IronOre.GetCurrentValue(at) > 0
+            ? refineryDemand
+            : Math.Min(refineryDemand, CurrentOreInflow());
+    }
+
+    // The current ingot production rate = RefineryIngotOutputFactor × ore actually refined (#83).
+    // Factored from EffectiveOreConsumption so RebaseRates' ingot Rate line and the zero-production
+    // starvation test in EvaluateIngotStarvation agree by construction — the ingot analogue of the
+    // shared CurrentOreInflow() helper. Needs `at` to read the ore buffer.
+    private decimal IngotProduction(DateTimeOffset at) =>
+        BuildingSpecs.RefineryIngotOutputFactor * EffectiveOreConsumption(at);
 
     public void CheckpointAllResources(DateTimeOffset now)
     {
