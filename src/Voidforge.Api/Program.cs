@@ -10,6 +10,7 @@ using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Http;
 using Voidforge.Api.OpenApi;
+using Voidforge.Api.Scoring;
 using Voidforge.Api.Travel;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
@@ -90,6 +91,7 @@ builder.Services.AddProblemDetails(options =>
     });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ITravelPlanner, LinearTravelPlanner>();
+builder.Services.AddSingleton<ScoreCalculator>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {
