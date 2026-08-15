@@ -35,8 +35,8 @@ public static class CompleteShipConstructionHandler
         var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
         if (updated is not null)
         {
-            await StorageHaltScheduling.ScheduleDeadlinesAsync(
-                bus, message.PlanetId, updated.PredictStorageDeadlines(message.CompletesAt));
+            await StorageHaltScheduling.ScheduleAllChecksAsync(
+                bus, message.PlanetId, updated, message.CompletesAt);
         }
     }
 }

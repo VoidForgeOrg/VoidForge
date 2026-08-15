@@ -161,4 +161,33 @@ public sealed class PlanetInputStarvationTests
         Assert.Equal(0m, planet.IronIngot.Rate); // No operational Refinery → ingot production stops.
         Assert.Equal(0m, planet.IronOre.Rate);    // No consumer left → net ore rate back to 0.
     }
+
+    // (e) EvaluateInputStarvationResumes un-halts an InputStarved Refinery once ore returns — here via a
+    // new Drill restoring inflow (the CompleteBuildingConstructionHandler-wired case, #70). A planet
+    // still dry (no inflow, empty buffer) resumes nothing; only InputStarved buildings are un-halted.
+    [Fact]
+    public void EvaluateInputStarvationResumesRefineryOnceDrillInflowReturns()
+    {
+        var planet = CreateColonizedPlanet();
+        // Starve it: Generator + Refinery, no Drill, buffer emptied → the Refinery halts InputStarved.
+        Place(planet, _base, BuildingType.Generator, BuildingType.Refinery);
+        EmptyOreBuffer(planet, _base);
+        var halt = Assert.IsType<BuildingHalted>(Assert.Single(planet.EvaluateInputStarvation(_base)));
+        planet.Apply(halt);
+        Assert.Equal(BuildingStatus.Halted, planet.Buildings[1].Status);
+        Assert.Equal(HaltReason.InputStarved, planet.Buildings[1].HaltReason);
+
+        // Still dry (zero inflow, empty buffer): nothing resumes.
+        Assert.Empty(planet.EvaluateInputStarvationResumes(_base));
+
+        // A new Drill restores ore inflow (slot 2, immediately Operational): the Refinery resumes.
+        Place(planet, _base, BuildingType.Drill);
+        Assert.True(planet.IronOre.Rate > 0m, "inflow must return once the Drill is operational.");
+
+        var resume = Assert.IsType<BuildingResumed>(Assert.Single(planet.EvaluateInputStarvationResumes(_base)));
+        Assert.Equal(1, resume.SlotIndex); // the Refinery slot.
+        planet.Apply(resume);
+        Assert.Equal(BuildingStatus.Operational, planet.Buildings[1].Status);
+        Assert.Null(planet.Buildings[1].HaltReason);
+    }
 }

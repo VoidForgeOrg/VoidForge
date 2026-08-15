@@ -122,6 +122,27 @@ public sealed partial class Planet
         return halts;
     }
 
+    // EvaluateInputStarvationResumes (#70): a Refinery halted InputStarved resumes once ore is
+    // genuinely restored — either drill inflow returned (a new/resumed Drill → CurrentOreInflow() > 0)
+    // or the stored buffer was refilled (a cargo delivery → IronOre.GetCurrentValue(at) > 0). Depletion
+    // is permanent, so most starvation never resumes; this fires only on the ore-restoring commits.
+    // Composition-driven and symmetric to EvaluateStorageResumes (it only un-halts InputStarved, so a
+    // ResourceDepleted/OutputStorageFull building is skipped): emits one BuildingResumed per resumable
+    // Refinery, [] when the planet is still dry (no inflow AND an empty buffer).
+    public IReadOnlyList<object> EvaluateInputStarvationResumes(DateTimeOffset at)
+    {
+        if (CurrentOreInflow() <= 0 && IronOre.GetCurrentValue(at) <= 0) return [];
+
+        var resumes = new List<object>();
+        for (var i = 0; i < Buildings.Count; i++)
+        {
+            var slot = Buildings[i];
+            if (slot.Status != BuildingStatus.Halted || slot.HaltReason != HaltReason.InputStarved) continue;
+            resumes.Add(new BuildingResumed(i, at));
+        }
+        return resumes;
+    }
+
     // PredictBufferEmpty (#70): the instant the stored IronOre buffer empties while a refinery drains
     // it faster than drills supply (IronOre.Rate < 0) — now + current / (−Rate) — or null when the
     // buffer is not draining (Rate >= 0) or is already empty. Symmetric to PredictStorageDeadlines'
