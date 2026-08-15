@@ -209,6 +209,35 @@ public static class IntegrationApiExtensions
         return fleet;
     }
 
+    public static async Task<FleetResponse> Recall(
+        this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
+    {
+        var result = await host.Scenario(s =>
+        {
+            s.Post.Url($"/api/fleets/{fleetId}/cancel");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.StatusCodeShouldBe(200);
+        });
+
+        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
+        Assert.NotNull(fleet);
+        return fleet;
+    }
+
+    /// <summary>POSTs the bodyless cancel and returns the raw status code — for 409/403 cases.</summary>
+    public static async Task<int> CancelForStatus(
+        this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
+    {
+        var result = await host.Scenario(s =>
+        {
+            s.Post.Url($"/api/fleets/{fleetId}/cancel");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+            s.IgnoreStatusCode();
+        });
+
+        return result.Context.Response.StatusCode;
+    }
+
     public static async Task<FleetResponse> Unload(
         this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
     {

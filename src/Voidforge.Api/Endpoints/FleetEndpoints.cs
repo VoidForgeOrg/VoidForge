@@ -56,7 +56,9 @@ public static class FleetEndpoints
             return TypedResults.Conflict("Only a stationed fleet can be launched.");
         }
 
-        if (request.DestinationPlanetId == fleet.LocationPlanetId)
+        // #60: Move/Transport to the current location is a 400 (no journey); colonize-in-place
+        // is exempt — a zero-distance plan arrives at once and the guarded claim decides.
+        if (request.DestinationPlanetId == fleet.LocationPlanetId && request.Mission != MissionType.Colonize)
         {
             return TypedResults.BadRequest("Destination must differ from the fleet's current location.");
         }
@@ -210,6 +212,56 @@ public static class FleetEndpoints
         var now = timeProvider.GetUtcNow();
         planetStream.AppendOne(planet.ReturnShipsToRoster(fleet.Id, fleet.ToRosterShips(), now));
         fleetStream.AppendOne(fleet.Disband(now));
+        await session.SaveChangesAsync();
+
+        var balance = balanceOptions.Value;
+        var updated = await session.Events.FetchLatest<Fleet>(fleetId);
+        return TypedResults.Ok(FleetResponse.From(updated!, t => balance.Ships.For(t).CargoCapacity));
+    }
+
+    // Recall (#73, D10): turn an in-transit fleet around to head back to its origin, arriving
+    // in exactly the time already elapsed. Only the Fleet stream is touched — no planet is
+    // read or appended. The freshly-scheduled arrival at the return time fires the return;
+    // the originally-scheduled CompleteFleetArrival(oldArrivesAt) goes stale and no-ops via
+    // Fleet.Arrive's validate-on-arrival guard (ADR 0001 — no outbox cancellation).
+    [WolverinePost("/api/fleets/{fleetId}/cancel")]
+    public static async Task<Results<Ok<FleetResponse>, NotFound, ForbidHttpResult, Conflict<string>>> Cancel(
+        Guid fleetId,
+        ClaimsPrincipal principal,
+        IDocumentSession session,
+        IMessageBus bus,
+        IOptions<BalanceOptions> balanceOptions,
+        TimeProvider timeProvider)
+    {
+        var stream = await session.Events.FetchForWriting<Fleet>(fleetId);
+        var fleet = stream.Aggregate;
+        if (fleet is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (PlayerId(principal) != fleet.OwnerId)
+        {
+            return TypedResults.Forbid();
+        }
+
+        if (fleet.Status != FleetStatus.InTransit)
+        {
+            return TypedResults.Conflict("Only an in-transit fleet can be recalled.");
+        }
+
+        // Pre-check the "already returning" marker here rather than let Fleet.Recall's guard
+        // throw — that guard is a defensive backstop, not the 409 path (mirrors Disband's cargo pre-check).
+        if (fleet.RecalledAt is not null)
+        {
+            return TypedResults.Conflict("Fleet is already returning.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var recalled = fleet.Recall(now);
+        stream.AppendOne(recalled);
+        await bus.ScheduleAsync(
+            new CompleteFleetArrival(fleetId, recalled.ReturnPlan.ArrivesAt), recalled.ReturnPlan.ArrivesAt);
         await session.SaveChangesAsync();
 
         var balance = balanceOptions.Value;
