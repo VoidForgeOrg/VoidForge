@@ -64,6 +64,9 @@ public static class BuildingEndpoints
         await session.SaveChangesAsync();
 
         var updated = await session.Events.FetchLatest<Planet>(planetId);
-        return TypedResults.Ok(PlanetResponse.From(updated!, now));
+        // A new UnderConstruction slot changes ingot-drain rates now, and its eventual completion
+        // changes production rates — reschedule storage-full checks from the post-commit state (#69).
+        await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, planetId, updated!.PredictStorageDeadlines(now));
+        return TypedResults.Ok(PlanetResponse.From(updated, now));
     }
 }

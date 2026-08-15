@@ -12,6 +12,7 @@ using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Http;
 using Voidforge.Api.WorldGeneration;
+using Wolverine;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
@@ -28,6 +29,7 @@ public static class PlayerEndpoints
     public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
         RegisterPlayerRequest request,
         IDocumentStore store,
+        IMessageBus bus,
         IOptions<WorldGenOptions> worldGenOptions,
         TimeProvider timeProvider)
     {
@@ -63,7 +65,7 @@ public static class PlayerEndpoints
         // stream, ApiKey, stale Planet append) carries over to the next.
         for (var attempt = 0; attempt < _maxClaimAttempts; attempt++)
         {
-            var (outcome, response) = await TryClaimHomeworld(store, playerId, rawKey, hashedKey, opts, request.Name, now);
+            var (outcome, response) = await TryClaimHomeworld(store, bus, playerId, rawKey, hashedKey, opts, request.Name, now);
             switch (outcome)
             {
                 case ClaimOutcome.Claimed:
@@ -96,7 +98,7 @@ public static class PlayerEndpoints
     // sessions are required). Mirrors the fleet Colonize claim's guard shape: FetchForWriting,
     // a null-owner check before appending, optimistic concurrency on SaveChangesAsync.
     private static async Task<(ClaimOutcome Outcome, RegisterPlayerResponse? Response)> TryClaimHomeworld(
-        IDocumentStore store, Guid playerId, string rawKey, string hashedKey, WorldGenOptions opts, string playerName, DateTimeOffset now)
+        IDocumentStore store, IMessageBus bus, Guid playerId, string rawKey, string hashedKey, WorldGenOptions opts, string playerName, DateTimeOffset now)
     {
         await using var session = store.LightweightSession();
 
@@ -117,9 +119,8 @@ public static class PlayerEndpoints
         var stream = await session.Events.FetchForWriting<Planet>(homeworldId);
         if (stream.Aggregate?.OwnerId is not null)
         {
-            // Stale read: something else (another registration, or a fleet's Colonize claim)
-            // took this planet between our query and FetchForWriting. No exception involved —
-            // the caller re-picks on the next attempt.
+            // Stale read: another registration or a fleet's Colonize claim took this planet between
+            // our query and FetchForWriting (no exception) — the caller re-picks on the next attempt.
             return (ClaimOutcome.LostRace, null);
         }
 
@@ -141,6 +142,7 @@ public static class PlayerEndpoints
         try
         {
             await session.SaveChangesAsync();
+            await ScheduleInitialStorageChecks(session, bus, homeworldId, now);
             return (ClaimOutcome.Claimed, new RegisterPlayerResponse(playerId, rawKey, homeworldId));
         }
         catch (ConcurrencyException)
@@ -156,6 +158,24 @@ public static class PlayerEndpoints
             // pre-check and this commit, tripping the Player.Name unique index (Marten wraps it as
             // Npgsql PostgresException 23505). Register returns 409 now, NOT the LostRace re-pick.
             return (ClaimOutcome.NameTaken, null);
+        }
+    }
+
+    // Schedule the freshly-seeded homeworld's initial storage-full checks (#69), mirroring the four
+    // mutation sites (BuildingEndpoints.Place etc.). The homeworld is seeded with an Operational Drill
+    // (net ore inflow), so an otherwise idle ore pool fills to capacity and the Drill must halt on
+    // OutputStorageFull; without an initial check the Drill would just clamp and keep drawing full
+    // energy until the player's next building/ship action reschedules. Scheduled via the bus rather
+    // than the committed transaction (this is a bare store session, not the endpoint's outbox-enrolled
+    // one), so a lost/duplicate initial check is self-healing: validate-on-arrival no-ops and any later
+    // mutation reschedules. FetchLatest reads the just-committed inline snapshot for post-seed rates.
+    private static async Task ScheduleInitialStorageChecks(
+        IDocumentSession session, IMessageBus bus, Guid homeworldId, DateTimeOffset now)
+    {
+        var seeded = await session.Events.FetchLatest<Planet>(homeworldId);
+        if (seeded is not null)
+        {
+            await StorageHaltScheduling.ScheduleDeadlinesAsync(bus, homeworldId, seeded.PredictStorageDeadlines(now));
         }
     }
 

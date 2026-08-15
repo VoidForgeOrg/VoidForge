@@ -6,4 +6,5 @@ public sealed record BuildingSlot(
     BuildingType Type,
     BuildingStatus Status,
     DateTimeOffset? CompletesAt = null,
-    decimal ConstructionDrainPerSecond = 0m);
+    decimal ConstructionDrainPerSecond = 0m,
+    HaltReason? HaltReason = null);
