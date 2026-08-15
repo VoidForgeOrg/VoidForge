@@ -10,6 +10,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
+using Voidforge.Api.Http;
 using Voidforge.Api.WorldGeneration;
 using Wolverine.Http;
 
@@ -67,6 +68,12 @@ public static class PlayerEndpoints
             {
                 case ClaimOutcome.Claimed:
                     return TypedResults.Ok(response!);
+                case ClaimOutcome.NameTaken:
+                    // A concurrent racer committed this Player.Name between our up-front pre-check
+                    // and our commit, tripping the Player.Name unique index. Return immediately —
+                    // this is NOT the planet re-pick path: retrying would re-hit the same duplicate
+                    // name every attempt and exhaust the loop pointlessly.
+                    return TypedResults.Conflict("Player name is already taken.");
                 case ClaimOutcome.NoUncolonizedPlanets:
                     return TypedResults.StatusCode(503);
                 case ClaimOutcome.LostRace:
@@ -81,6 +88,7 @@ public static class PlayerEndpoints
     {
         Claimed,
         LostRace,
+        NameTaken,
         NoUncolonizedPlanets,
     }
 
@@ -141,6 +149,13 @@ public static class PlayerEndpoints
             // next attempt. Nothing committed: this attempt's own session discards the queued
             // Player/ApiKey writes along with the failed Planet append.
             return (ClaimOutcome.LostRace, null);
+        }
+        catch (Exception ex) when (MartenExceptions.IsUniqueViolation(ex))
+        {
+            // Lost the NAME race: a concurrent registration committed this Player.Name between our
+            // pre-check and this commit, tripping the Player.Name unique index (Marten wraps it as
+            // Npgsql PostgresException 23505). Register returns 409 now, NOT the LostRace re-pick.
+            return (ClaimOutcome.NameTaken, null);
         }
     }
 
