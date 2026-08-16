@@ -156,17 +156,21 @@ public sealed class Fleet
         RecalledAt = null;
     }
 
-    // In-transit-only (409 at the endpoint, which also rejects an already-recalled fleet).
-    // Per D10, recall turns an in-flight fleet around to head back to its origin, arriving in
-    // exactly the time already elapsed. The return plan is synthesized directly rather than
-    // via the coordinate planner — an in-transit fleet has no live position — and rides the
-    // event so replay is deterministic (mirroring FleetDeparted.Plan). The throws are
-    // defensive: the endpoint pre-checks, mirroring how Depart throws on a non-Stationed fleet.
+    // In-transit-only, and only strictly before the scheduled arrival (409 at the endpoint, which also
+    // rejects an already-recalled fleet). Per D10, recall turns an in-flight fleet around to head back to
+    // its origin, arriving in exactly the time already elapsed. The return plan is synthesized directly
+    // rather than via the coordinate planner — an in-transit fleet has no live position — and rides the
+    // event so replay is deterministic (mirroring FleetDeparted.Plan). Recalling at or after ArrivesAt is
+    // rejected: a delayed durable arrival can leave the fleet InTransit past ArrivesAt, and `elapsed` would
+    // then exceed the outbound duration, synthesizing a return trip from beyond the destination. The throws
+    // are defensive: the endpoint pre-checks, mirroring how Depart throws on a non-Stationed fleet.
     public FleetRecalled Recall(DateTimeOffset now)
     {
-        if (Status != FleetStatus.InTransit || RecalledAt is not null)
+        // Status == InTransit guarantees DepartedAt/ArrivesAt/TravelPlan are non-null (Apply(FleetDeparted)
+        // sets them; Apply(FleetArrived) clears them together with Stationed), so the arrival bound is safe.
+        if (Status != FleetStatus.InTransit || RecalledAt is not null || now >= ArrivesAt!.Value)
         {
-            throw new InvalidOperationException("Only an in-transit fleet that has not already been recalled can be recalled.");
+            throw new InvalidOperationException("Only an in-transit fleet that has not already been recalled, and only before its scheduled arrival, can be recalled.");
         }
 
         var elapsed = now - DepartedAt!.Value;

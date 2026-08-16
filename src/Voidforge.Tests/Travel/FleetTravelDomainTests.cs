@@ -229,6 +229,22 @@ public sealed class FleetTravelDomainTests
         Assert.Throws<InvalidOperationException>(() => fleet.Recall(recallAt.AddSeconds(5)));
     }
 
+    // A delayed durable arrival can leave the fleet InTransit at/after ArrivesAt; recalling then would
+    // build a return trip from beyond the destination (elapsed > outbound duration), so Recall rejects it.
+    [Fact]
+    public void RecallAtOrAfterArrivalThrows()
+    {
+        var (fleet, _, _) = AssembledFleet(ShipType.ColonyShip);
+        var departAt = _t0.AddSeconds(20);
+        var arrivesAt = departAt.AddSeconds(140);
+        fleet.Apply(fleet.Depart(Guid.NewGuid(), MissionType.Move, Plan(arrivesAt), departAt));
+
+        Assert.Throws<InvalidOperationException>(() => fleet.Recall(arrivesAt));                 // exactly at arrival
+        Assert.Throws<InvalidOperationException>(() => fleet.Recall(arrivesAt.AddSeconds(30)));  // past arrival
+        // A recall strictly before arrival still succeeds.
+        Assert.NotNull(fleet.Recall(arrivesAt.AddSeconds(-1)));
+    }
+
     [Fact]
     public void DisbandAfterArrivalSucceedsAtTheNewLocation()
     {

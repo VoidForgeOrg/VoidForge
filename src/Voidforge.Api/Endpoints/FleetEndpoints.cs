@@ -259,6 +259,16 @@ public static class FleetEndpoints
         }
 
         var now = timeProvider.GetUtcNow();
+
+        // Reject a recall at or after the scheduled arrival (#73): a delayed durable arrival can leave the
+        // fleet InTransit past ArrivesAt, and Fleet.Recall would then synthesize a return plan departing
+        // from beyond the destination. Let the pending arrival complete. Pre-checked here so this is the
+        // 409 path rather than Fleet.Recall's defensive throw (mirrors the RecalledAt pre-check above).
+        if (now >= fleet.ArrivesAt)
+        {
+            return TypedResults.Problem(detail: "Fleet has already arrived or is arriving and can no longer be recalled.", statusCode: StatusCodes.Status409Conflict);
+        }
+
         var recalled = fleet.Recall(now);
         stream.AppendOne(recalled);
         await bus.ScheduleAsync(

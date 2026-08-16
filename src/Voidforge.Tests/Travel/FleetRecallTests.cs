@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Endpoints;
+using Voidforge.Api.Travel;
 using Voidforge.Tests.Support;
 using Xunit;
 
@@ -138,6 +139,32 @@ public sealed class FleetRecallTests
         var status = await _host.CancelForStatus(owner, fleet.Id);
 
         Assert.Equal(409, status);
+    }
+
+    // A recall at/after the scheduled arrival must be a 409, not an unhandled 500 (CodeRabbit #91): a
+    // delayed durable arrival can leave the fleet InTransit past ArrivesAt. Constructed via a direct event
+    // append with an arrival already in the past — Launch would always yield a future ArrivesAt.
+    [Fact]
+    public async Task RecallAtOrAfterArrivalReturns409()
+    {
+        var owner = await _host.RegisterPlayer("FleetRecall_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
+
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        var pastArrival = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await using (var session = store.LightweightSession())
+        {
+            var plan = new TravelPlan(pastArrival, TotalDistance: 7m, Legs: [new TravelLeg(null, 7m, pastArrival)]);
+            session.Events.Append(
+                fleet.Id,
+                new FleetDeparted(owner.HomeworldId, Guid.NewGuid(), MissionType.Move, pastArrival.AddMinutes(-1), plan));
+            await session.SaveChangesAsync();
+        }
+
+        var status = await _host.CancelForStatus(owner, fleet.Id);
+
+        Assert.Equal(409, status);   // in-transit but already arriving → cannot recall
     }
 
     [Fact]
