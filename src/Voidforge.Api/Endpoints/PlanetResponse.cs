@@ -7,7 +7,7 @@ public sealed record PlanetResponse(
     string Name,
     Guid SolarSystemId,
     Guid? OwnerId,
-    long IronOrePool,
+    decimal IronOrePool,
     int BuildingSlotCount,
     decimal X,
     decimal Y,
@@ -25,7 +25,7 @@ public sealed record PlanetResponse(
         planet.Name,
         planet.SolarSystemId,
         planet.OwnerId,
-        planet.IronOrePool,
+        planet.IronOreDeposit.GetCurrentValue(now),
         planet.BuildingSlotCount,
         planet.X,
         planet.Y,
@@ -45,5 +45,5 @@ public sealed record PlanetResponse(
         planet.Ships.Count,
         planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Active),
         planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Queued),
-        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt))]);
+        [.. planet.Buildings.Select(b => new BuildingSlotResponse(b.Type, b.Status, b.CompletesAt, b.HaltReason))]);
 }

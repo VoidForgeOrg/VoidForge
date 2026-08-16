@@ -10,7 +10,10 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
+using Voidforge.Api.Http;
+using Voidforge.Api.Scoring;
 using Voidforge.Api.WorldGeneration;
+using Wolverine;
 using Wolverine.Http;
 
 namespace Voidforge.Api.Endpoints;
@@ -24,9 +27,10 @@ public static class PlayerEndpoints
 
     [AllowAnonymous]
     [WolverinePost("/api/players/register")]
-    public static async Task<Results<Ok<RegisterPlayerResponse>, Conflict<string>, StatusCodeHttpResult>> Register(
+    public static async Task<Results<Ok<RegisterPlayerResponse>, ProblemHttpResult>> Register(
         RegisterPlayerRequest request,
         IDocumentStore store,
+        IMessageBus bus,
         IOptions<WorldGenOptions> worldGenOptions,
         TimeProvider timeProvider)
     {
@@ -39,7 +43,7 @@ public static class PlayerEndpoints
 
             if (nameTaken)
             {
-                return TypedResults.Conflict("Player name is already taken.");
+                return TypedResults.Problem(detail: "Player name is already taken.", statusCode: StatusCodes.Status409Conflict);
             }
         }
 
@@ -62,25 +66,32 @@ public static class PlayerEndpoints
         // stream, ApiKey, stale Planet append) carries over to the next.
         for (var attempt = 0; attempt < _maxClaimAttempts; attempt++)
         {
-            var (outcome, response) = await TryClaimHomeworld(store, playerId, rawKey, hashedKey, opts, request.Name, now);
+            var (outcome, response) = await TryClaimHomeworld(store, bus, playerId, rawKey, hashedKey, opts, request.Name, now);
             switch (outcome)
             {
                 case ClaimOutcome.Claimed:
                     return TypedResults.Ok(response!);
+                case ClaimOutcome.NameTaken:
+                    // A concurrent racer committed this Player.Name between our up-front pre-check
+                    // and our commit, tripping the Player.Name unique index. Return immediately —
+                    // this is NOT the planet re-pick path: retrying would re-hit the same duplicate
+                    // name every attempt and exhaust the loop pointlessly.
+                    return TypedResults.Problem(detail: "Player name is already taken.", statusCode: StatusCodes.Status409Conflict);
                 case ClaimOutcome.NoUncolonizedPlanets:
-                    return TypedResults.StatusCode(503);
+                    return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
                 case ClaimOutcome.LostRace:
                     continue;   // stale read or a genuine tie lost on commit — re-pick
             }
         }
 
-        return TypedResults.StatusCode(503);
+        return TypedResults.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     private enum ClaimOutcome
     {
         Claimed,
         LostRace,
+        NameTaken,
         NoUncolonizedPlanets,
     }
 
@@ -88,7 +99,7 @@ public static class PlayerEndpoints
     // sessions are required). Mirrors the fleet Colonize claim's guard shape: FetchForWriting,
     // a null-owner check before appending, optimistic concurrency on SaveChangesAsync.
     private static async Task<(ClaimOutcome Outcome, RegisterPlayerResponse? Response)> TryClaimHomeworld(
-        IDocumentStore store, Guid playerId, string rawKey, string hashedKey, WorldGenOptions opts, string playerName, DateTimeOffset now)
+        IDocumentStore store, IMessageBus bus, Guid playerId, string rawKey, string hashedKey, WorldGenOptions opts, string playerName, DateTimeOffset now)
     {
         await using var session = store.LightweightSession();
 
@@ -109,9 +120,8 @@ public static class PlayerEndpoints
         var stream = await session.Events.FetchForWriting<Planet>(homeworldId);
         if (stream.Aggregate?.OwnerId is not null)
         {
-            // Stale read: something else (another registration, or a fleet's Colonize claim)
-            // took this planet between our query and FetchForWriting. No exception involved —
-            // the caller re-picks on the next attempt.
+            // Stale read: another registration or a fleet's Colonize claim took this planet between
+            // our query and FetchForWriting (no exception) — the caller re-picks on the next attempt.
             return (ClaimOutcome.LostRace, null);
         }
 
@@ -133,6 +143,7 @@ public static class PlayerEndpoints
         try
         {
             await session.SaveChangesAsync();
+            await ScheduleInitialStorageChecks(session, bus, homeworldId, now);
             return (ClaimOutcome.Claimed, new RegisterPlayerResponse(playerId, rawKey, homeworldId));
         }
         catch (ConcurrencyException)
@@ -142,26 +153,59 @@ public static class PlayerEndpoints
             // Player/ApiKey writes along with the failed Planet append.
             return (ClaimOutcome.LostRace, null);
         }
+        catch (Exception ex) when (MartenExceptions.IsUniqueViolation(ex))
+        {
+            // Lost the NAME race: a concurrent registration committed this Player.Name between our
+            // pre-check and this commit, tripping the Player.Name unique index (Marten wraps it as
+            // Npgsql PostgresException 23505). Register returns 409 now, NOT the LostRace re-pick.
+            return (ClaimOutcome.NameTaken, null);
+        }
+    }
+
+    // Schedule the freshly-seeded homeworld's initial cascade checks (#69/#70), mirroring the other
+    // mutation sites (BuildingEndpoints.Place etc.). The homeworld is seeded with an Operational Drill
+    // (net ore inflow) draining a finite deposit, so this arms both the storage-full check AND the
+    // deposit-depletion check from the outset. Without an initial check the Drill would just clamp and keep drawing full
+    // energy until the player's next building/ship action reschedules. Scheduled via the bus rather
+    // than the committed transaction (this is a bare store session, not the endpoint's outbox-enrolled
+    // one), so a lost/duplicate initial check is self-healing: validate-on-arrival no-ops and any later
+    // mutation reschedules. FetchLatest reads the just-committed inline snapshot for post-seed rates.
+    private static async Task ScheduleInitialStorageChecks(
+        IDocumentSession session, IMessageBus bus, Guid homeworldId, DateTimeOffset now)
+    {
+        var seeded = await session.Events.FetchLatest<Planet>(homeworldId);
+        if (seeded is not null)
+        {
+            await StorageHaltScheduling.ScheduleAllChecksAsync(bus, homeworldId, seeded, now);
+        }
     }
 
     [WolverineGet("/api/players/me")]
-    public static async Task<Results<Ok<PlayerInfoResponse>, NotFound>> Me(
+    public static async Task<Results<Ok<PlayerInfoResponse>, ProblemHttpResult>> Me(
         ClaimsPrincipal principal,
-        IQuerySession session)
+        IQuerySession session,
+        ScoreCalculator scoreCalculator,
+        TimeProvider timeProvider)
     {
-        var idClaim = principal.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!Guid.TryParse(idClaim, out var playerId))
+        if (principal.PlayerId() is not { } playerId)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
         var player = await session.LoadAsync<Player>(playerId);
         if (player is null)
         {
-            return TypedResults.NotFound();
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
         }
 
-        return TypedResults.Ok(new PlayerInfoResponse(player.Id, player.Name, player.RegisteredAt));
+        // Lazy score (#67): materialize everything the player currently owns and let ScoreCalculator
+        // evaluate it at query-time `now` — resource pools are read from checkpoints, never a stored
+        // stale field (acceptance criterion). The Disbanded-fleet filter lives inside Extract.
+        var ownedPlanets = await session.Query<Planet>().Where(p => p.OwnerId == playerId).ToListAsync();
+        var ownedFleets = await session.Query<Fleet>().Where(f => f.OwnerId == playerId).ToListAsync();
+        var score = scoreCalculator.Compute(ownedPlanets, ownedFleets, timeProvider.GetUtcNow());
+
+        return TypedResults.Ok(new PlayerInfoResponse(player.Id, player.Name, player.RegisteredAt, score));
     }
 
     private static string GenerateApiKey()

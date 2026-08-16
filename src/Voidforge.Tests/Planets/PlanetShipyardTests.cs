@@ -35,12 +35,19 @@ public sealed class PlanetShipyardTests
                 case ShipConstructionStarted s: planet.Apply(s); break;
                 case ShipCompleted c: planet.Apply(c); break;
                 case ShipConstructionCancelled x: planet.Apply(x); break;
+                case ShipBuildHalted h: planet.Apply(h); break;
+                case ShipBuildResumed r: planet.Apply(r); break;
                 case BuildingCompleted b: planet.Apply(b); break;
             }
         }
 
         return planet;
     }
+
+    // Pin the stored IronIngot buffer to empty without changing composition — the Rate stays as
+    // RebaseRates derived it, which is what the ingot-starvation check runs against (#83).
+    private static void EmptyIngotBuffer(Planet planet, DateTimeOffset at) =>
+        planet.IronIngot = planet.IronIngot with { CheckpointValue = 0m, CheckpointTime = at };
 
     [Fact]
     public void QueueShipWithFreeCapacityStartsImmediately()
@@ -231,5 +238,155 @@ public sealed class PlanetShipyardTests
         Apply(planet, completeEvents);   // applies BuildingCompleted (via helper) + starts
         planet.Apply((ShipConstructionStarted)autoStart);
         Assert.Equal(ShipBuildStatus.Active, planet.ShipQueue.Single(b => b.Id == id).Status);
+    }
+
+    // #83: an active ship build halts on zero-ingot — its ingot drain drops out of the rate, its state
+    // is preserved for resume, and (the subtle part) a lone halted build draws only the 5% idle floor,
+    // NOT full power (ActiveShipBuildCount excludes it from the fungible-bay energy math).
+    [Fact]
+    public void HaltingActiveShipBuildStopsIngotDrainAndDrawsNoFullPower()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);
+        var id = Guid.NewGuid();
+        Apply(planet, planet.QueueShip(ShipType.ColonyShip, now, id, _drain, _duration));
+
+        var full = BuildingSpecs.EnergyDrawMw(BuildingType.Shipyard);
+        Assert.Equal(-_drain, planet.IronIngot.Rate);          // active build drains ingots.
+        Assert.Equal(full, planet.GetEnergyConsumptionMw());   // active build → full shipyard draw.
+
+        EmptyIngotBuffer(planet, now);
+        var halt = Assert.IsType<ShipBuildHalted>(Assert.Single(planet.EvaluateIngotStarvation(now)));
+        Assert.Equal(id, halt.BuildId);
+        planet.Apply(halt);
+
+        var build = planet.ShipQueue.Single();
+        Assert.Equal(ShipBuildStatus.Halted, build.Status);
+        Assert.Equal(now, build.HaltedAt);
+        Assert.Equal(now.AddSeconds((double)_duration), build.CompletesAt);   // preserved for resume.
+        Assert.Equal(0m, planet.IronIngot.Rate);   // drain dropped: no production, no active drain.
+        // A lone halted build draws the 5% idle floor, NOT full — it must not count as a busy bay.
+        Assert.Equal(full * BuildingSpecs.ShipyardIdleDrawFactor, planet.GetEnergyConsumptionMw());
+    }
+
+    // #83 bay accounting: a halted ship build keeps its bay occupied, so a newly queued build does NOT
+    // auto-start into the same starvation. Capacity 3, all 3 bays held by halted builds → the 4th waits.
+    [Fact]
+    public void HaltedShipBuildOccupiesBaySoQueuedDoesNotAutoStart()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);   // capacity 3
+        for (var i = 0; i < 3; i++)
+        {
+            Apply(planet, planet.QueueShip(ShipType.ColonyShip, now, Guid.NewGuid(), _drain, _duration));
+        }
+
+        Assert.Equal(3, planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Active));
+
+        // Starve → all 3 active builds halt, occupying all 3 bays.
+        EmptyIngotBuffer(planet, now);
+        var halts = planet.EvaluateIngotStarvation(now);
+        Assert.Equal(3, halts.Count);
+        Assert.All(halts, e => Assert.IsType<ShipBuildHalted>(e));
+        Apply(planet, halts);
+        Assert.Equal(3, planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Halted));
+
+        // A newly queued build must NOT auto-start — every bay is held by a halted build.
+        var fourthId = Guid.NewGuid();
+        var fourth = planet.QueueShip(ShipType.ColonyShip, now, fourthId, _drain, _duration);
+        Assert.Single(fourth);                                  // queued only, no ShipConstructionStarted.
+        Assert.IsType<ShipConstructionQueued>(fourth[0]);
+        Apply(planet, fourth);
+        Assert.Equal(ShipBuildStatus.Queued, planet.ShipQueue.Single(b => b.Id == fourthId).Status);
+    }
+
+    // Cancelling a HALTED ship build frees its bay, so a waiting queued build must auto-start (CodeRabbit
+    // #91): a Halted build occupies a bay (OccupiedBayCount), and the old `== Active` cancel guard skipped
+    // StartQueuedBuilds for a halted cancel — stranding the queue until an unrelated capacity event.
+    [Fact]
+    public void CancellingAHaltedBuildAutoStartsNextQueued()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);   // capacity 3
+        var ids = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var id = Guid.NewGuid();
+            ids.Add(id);
+            Apply(planet, planet.QueueShip(ShipType.ColonyShip, now.AddSeconds(i), id, _drain, _duration));
+        }
+
+        // Starve → all 3 active builds halt, holding all 3 bays.
+        EmptyIngotBuffer(planet, now);
+        Apply(planet, planet.EvaluateIngotStarvation(now));
+        Assert.Equal(3, planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Halted));
+
+        // A 4th build queues but cannot start — every bay is held by a halted build.
+        var fourthId = Guid.NewGuid();
+        Apply(planet, planet.QueueShip(ShipType.ColonyShip, now.AddSeconds(3), fourthId, _drain, _duration));
+        Assert.Equal(ShipBuildStatus.Queued, planet.ShipQueue.Single(b => b.Id == fourthId).Status);
+
+        // Cancelling a HALTED build frees a bay → the queued 4th auto-starts into it.
+        var cancelEvents = planet.CancelShipBuild(ids[0], now.AddSeconds(10));
+        Assert.Contains(cancelEvents, e => e is ShipConstructionCancelled);
+        var autoStart = cancelEvents.OfType<ShipConstructionStarted>().Single();
+        Assert.Equal(fourthId, autoStart.BuildId);
+
+        Apply(planet, cancelEvents);
+        Assert.DoesNotContain(planet.ShipQueue, b => b.Id == ids[0]);                                  // cancelled, no refund
+        Assert.Equal(ShipBuildStatus.Active, planet.ShipQueue.Single(b => b.Id == fourthId).Status);   // queued build started
+    }
+
+    // #83: resume restores the build to Active, pushes CompletesAt out by exactly the paused span
+    // (resumeAt + (originalCompletesAt − haltedAt)), clears HaltedAt, and restores the ingot drain.
+    [Fact]
+    public void ResumingHaltedShipBuildRestoresActiveAndPushesCompletion()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);
+        var id = Guid.NewGuid();
+        Apply(planet, planet.QueueShip(ShipType.ColonyShip, now, id, _drain, _duration));
+        var originalCompletesAt = planet.ShipQueue.Single().CompletesAt!.Value;   // now + 30s.
+
+        EmptyIngotBuffer(planet, now);
+        var haltAt = now.AddSeconds(10);   // 20s of work remaining at the pause.
+        Apply(planet, planet.EvaluateIngotStarvation(haltAt));
+        Assert.Equal(ShipBuildStatus.Halted, planet.ShipQueue.Single().Status);
+        Assert.Equal(haltAt, planet.ShipQueue.Single().HaltedAt);
+        Assert.Equal(0m, planet.IronIngot.Rate);   // drain dropped while halted.
+
+        var resumeAt = now.AddSeconds(100);
+        planet.Apply(new ShipBuildResumed(id, resumeAt));
+
+        var build = planet.ShipQueue.Single();
+        Assert.Equal(ShipBuildStatus.Active, build.Status);
+        Assert.Null(build.HaltedAt);
+        Assert.Equal(resumeAt + (originalCompletesAt - haltAt), build.CompletesAt);
+        Assert.Equal(now.AddSeconds(120), build.CompletesAt);   // 100 + 20.
+        Assert.Equal(-_drain, planet.IronIngot.Rate);           // drain restored.
+    }
+
+    // #83 bay accounting must not regress NORMAL auto-start: with nothing halted, OccupiedBayCount ==
+    // ActiveShipBuildCount, so a completing build still auto-starts the next queued build.
+    [Fact]
+    public void NonStarvedCompletionStillAutoStartsNextQueued()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);   // capacity 3
+        var ids = new List<Guid>();
+        for (var i = 0; i < 4; i++)
+        {
+            var id = Guid.NewGuid();
+            ids.Add(id);
+            Apply(planet, planet.QueueShip(ShipType.ColonyShip, now.AddSeconds(i), id, _drain, _duration));
+        }
+
+        var first = planet.ShipQueue.First(b => b.Id == ids[0]);
+        var completeEvents = planet.CompleteShipBuild(ids[0], first.CompletesAt!.Value);
+        var autoStart = completeEvents.OfType<ShipConstructionStarted>().Single();
+        Assert.Equal(ids[3], autoStart.BuildId);   // the 4th (only queued) starts into the freed bay.
+
+        Apply(planet, completeEvents);
+        Assert.Equal(3, planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Active));
     }
 }

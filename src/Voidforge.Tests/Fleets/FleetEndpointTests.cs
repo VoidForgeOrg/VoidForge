@@ -3,6 +3,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Fleets;
@@ -20,7 +21,7 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleWithEmptyShipIdsReturns400()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
         await _host.Scenario(s =>
         {
             s.Post.Json(new AssembleFleetRequest([])).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
@@ -32,7 +33,7 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleWithNullShipIdsReturns400()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
         await _host.Scenario(s =>
         {
             s.Post.Json(new { }).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
@@ -44,7 +45,7 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleUnknownPlanetReturns404()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
         await _host.Scenario(s =>
         {
             s.Post.Json(new AssembleFleetRequest([Guid.NewGuid()])).ToUrl($"/api/planets/{Guid.NewGuid()}/fleets");
@@ -56,7 +57,7 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleShipNotOnRosterReturns409()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
         await _host.Scenario(s =>
         {
             s.Post.Json(new AssembleFleetRequest([Guid.NewGuid()])).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
@@ -68,9 +69,9 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleSomeoneElsesShipsReturns403()
     {
-        var owner = await RegisterPlayer();          // builds the ships
-        var intruder = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);   // shipyard + 1 CargoVessel, waits for roster
+        var owner = await _host.RegisterPlayer("Fleet_Test_");          // builds the ships
+        var intruder = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);   // shipyard + 1 CargoVessel, waits for roster
 
         await _host.Scenario(s =>
         {
@@ -83,7 +84,7 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task DisbandUnknownFleetReturns404()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
         await _host.Scenario(s =>
         {
             s.Post.Url($"/api/fleets/{Guid.NewGuid()}/disband");
@@ -95,10 +96,10 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task DisbandForeignFleetReturns403()
     {
-        var owner = await RegisterPlayer();
-        var intruder = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        var fleet = await AssembleFleet(owner, [shipId]);
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var intruder = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
 
         await _host.Scenario(s =>
         {
@@ -111,10 +112,10 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task AssembleRosterShipsProducesAStationedFleet()
     {
-        var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
 
-        var fleet = await AssembleFleet(owner, [shipId]);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
 
         Assert.Equal(FleetStatus.Stationed, fleet.Status);
         Assert.Equal(owner.HomeworldId, fleet.LocationPlanetId);
@@ -123,16 +124,16 @@ public sealed class FleetEndpointTests
         Assert.Equal(shipId, fleetShip.Id);
 
         // The ship left the planet's roster.
-        var roster = await GetRoster(owner);
+        var roster = await _host.GetRoster(owner);
         Assert.DoesNotContain(roster.Items, r => r.Id == shipId);
     }
 
     [Fact]
     public async Task DisbandReturnsShipsToTheRoster()
     {
-        var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        var fleet = await AssembleFleet(owner, [shipId]);
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
 
         var result = await _host.Scenario(s =>
         {
@@ -146,16 +147,16 @@ public sealed class FleetEndpointTests
         Assert.Equal(FleetStatus.Disbanded, disbanded.Status);
         Assert.Empty(disbanded.Ships);
 
-        var roster = await GetRoster(owner);
+        var roster = await _host.GetRoster(owner);
         Assert.Contains(roster.Items, r => r.Id == shipId);
     }
 
     [Fact]
     public async Task DisbandTwiceReturns409()
     {
-        var owner = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        var fleet = await AssembleFleet(owner, [shipId]);
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
 
         await _host.Scenario(s =>
         {
@@ -175,15 +176,15 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task OwnFleetsListIsPaginatedAndScopedToCaller()
     {
-        var a = await RegisterPlayer();
-        var b = await RegisterPlayer();
-        var shipId = await BuildRosterShip(a);
-        var fleet = await AssembleFleet(a, [shipId]);
+        var a = await _host.RegisterPlayer("Fleet_Test_");
+        var b = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(a);
+        var fleet = await _host.AssembleFleet(a, [shipId]);
 
-        var page = await GetJson<PagedResponse<FleetSummaryResponse>>(b, "/api/fleets");
+        var page = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(b, "/api/fleets");
         Assert.DoesNotContain(page.Items, f => f.Id == fleet.Id);   // b sees only own fleets
 
-        var own = await GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets");
+        var own = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets");
         var summary = Assert.Single(own.Items, f => f.Id == fleet.Id);
         Assert.Equal(1, summary.ShipCount);
     }
@@ -191,12 +192,12 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task FleetDetailIsUniverseVisible()
     {
-        var a = await RegisterPlayer();
-        var b = await RegisterPlayer();
-        var shipId = await BuildRosterShip(a);
-        var fleet = await AssembleFleet(a, [shipId]);
+        var a = await _host.RegisterPlayer("Fleet_Test_");
+        var b = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(a);
+        var fleet = await _host.AssembleFleet(a, [shipId]);
 
-        var detail = await GetJson<FleetResponse>(b, $"/api/fleets/{fleet.Id}");
+        var detail = await _host.GetJson<FleetResponse>(b, $"/api/fleets/{fleet.Id}");
         Assert.Equal(fleet.Id, detail.Id);
         Assert.Single(detail.Ships);
     }
@@ -204,184 +205,60 @@ public sealed class FleetEndpointTests
     [Fact]
     public async Task PlanetFleetsListsStationedFleets()
     {
-        var a = await RegisterPlayer();
-        var shipId = await BuildRosterShip(a);
-        var fleet = await AssembleFleet(a, [shipId]);
+        var a = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(a);
+        var fleet = await _host.AssembleFleet(a, [shipId]);
 
-        var page = await GetJson<PagedResponse<FleetSummaryResponse>>(a, $"/api/planets/{a.HomeworldId}/fleets");
+        var page = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(a, $"/api/planets/{a.HomeworldId}/fleets");
         Assert.Contains(page.Items, f => f.Id == fleet.Id);
     }
 
     [Fact]
     public async Task DisbandedFleetsAreExcludedFromListsUnlessRequested()
     {
-        var a = await RegisterPlayer();
-        var shipId = await BuildRosterShip(a);
-        var fleet = await AssembleFleet(a, [shipId]);
-        await Disband(a, fleet.Id);
+        var a = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(a);
+        var fleet = await _host.AssembleFleet(a, [shipId]);
+        await _host.Disband(a, fleet.Id);
 
-        var live = await GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets");
+        var live = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets");
         Assert.DoesNotContain(live.Items, f => f.Id == fleet.Id);
 
-        var history = await GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets?status=Disbanded");
+        var history = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(a, "/api/fleets?status=Disbanded");
         Assert.Contains(history.Items, f => f.Id == fleet.Id);
     }
 
-    // Builds an operational shipyard, queues one CargoVessel (~2s build), and polls the
-    // roster until it appears. Returns the completed ship's id.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration)
+    // #63: an unparseable ?status= is a 400 ProblemDetails, not a silently-empty list.
+    [Fact]
+    public async Task OwnFleetsRejectsUnknownStatusWith400()
     {
-        await BuildOperationalShipyard(registration);
-        await QueueShip(registration, ShipType.CargoVessel);
+        var registration = await _host.RegisterPlayer("Fleet_Test_");
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        do
-        {
-            var roster = await GetRoster(registration);
-            if (roster.Items.Count > 0)
-            {
-                return roster.Items[0].Id;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        throw new InvalidOperationException("Ship did not complete onto the roster in time.");
-    }
-
-    private async Task<FleetResponse> AssembleFleet(RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds)
-    {
         var result = await _host.Scenario(s =>
         {
-            s.Post.Json(new AssembleFleetRequest(shipIds)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
+            s.Get.Url("/api/fleets?status=bogus");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
+            s.StatusCodeShouldBe(400);
         });
 
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
+        var body = result.ReadAsText();
+        Assert.Contains("Unknown fleet status 'bogus'.", body, StringComparison.Ordinal);
     }
 
-    private async Task<FleetResponse> Disband(RegisterPlayerResponse registration, Guid fleetId)
+    // #63: a valid ?status= (case-insensitive) stays 200 and filters to exactly that status.
+    [Fact]
+    public async Task OwnFleetsFilterByValidStatusReturns200AndFilters()
     {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Url($"/api/fleets/{fleetId}/disband");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
+        var owner = await _host.RegisterPlayer("Fleet_Test_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);   // freshly assembled → Stationed
 
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
+        // The matching status includes the fleet (lower-case proves ignoreCase parsing).
+        var stationed = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(owner, "/api/fleets?status=stationed");
+        Assert.Contains(stationed.Items, f => f.Id == fleet.Id);
 
-    private async Task<T> GetJson<T>(RegisterPlayerResponse registration, string url)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url(url);
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<T>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task BuildOperationalShipyard(RegisterPlayerResponse registration)
-    {
-        await _host.Scenario(s =>
-        {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        await PollUntil(
-            registration,
-            p => p.Buildings.Any(b => b.Type == BuildingType.Shipyard && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(20));
-    }
-
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PagedResponse<RosterShipResponse>> GetRoster(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}/ships?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var roster = await result.ReadAsJsonAsync<PagedResponse<RosterShipResponse>>();
-        Assert.NotNull(roster);
-        return roster;
-    }
-
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
-            {
-                return planet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        return planet;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Fleet_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
+        // A different valid status filters it out — still 200, not an error.
+        var inTransit = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(owner, "/api/fleets?status=InTransit");
+        Assert.DoesNotContain(inTransit.Items, f => f.Id == fleet.Id);
     }
 }

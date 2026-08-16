@@ -63,7 +63,7 @@ Fleets are the primary way players project power and move resources across space
 
 - Travel is **linear** — fleets move in a straight line from origin to destination.
 - Travel time is based on the **3D coordinate distance** between the two planets and the **fleet's speed** (determined by its slowest ship).
-- Fleets in transit **can be cancelled** *(planned MVP scope — not yet implemented as of Phase 4)*. A cancelled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back. (e.g., if cancelled 5 hours into a 12-hour trip, the return takes 5 hours.)
+- Fleets in transit **can be recalled** (cancelled). A recalled fleet turns around and returns to its origin planet, taking the **same amount of time it has already traveled** to get back (e.g., if recalled 5 hours into a 12-hour trip, the return takes 5 hours). It arrives **stationed** at the origin with its cargo — and any Colony Ship — **intact**; no cargo is delivered and no colonize claim is made on the return. Only an **in-transit** fleet can be recalled, and only **once** — a fleet that is already returning cannot be recalled again.
 
 ## Ship Roster
 
@@ -82,3 +82,5 @@ Each planet maintains a **ship roster** — a list of ships stationed there and 
 3. **Transit** — Fleet travels through space for a duration based on distance and speed.
 4. **Arrival** — Fleet arrives at destination and executes its mission (colonize, unload cargo).
 5. **Post-mission** — The fleet stays stationed at the destination; disbanding it returns its ships to that planet's roster.
+
+A fleet in **transit** may instead be **recalled** (see [Travel](#travel)): it turns around and returns to its origin, arriving stationed there with cargo and any Colony Ship intact.

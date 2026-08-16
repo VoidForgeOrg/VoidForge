@@ -1,8 +1,11 @@
 using Alba;
-using Voidforge.Api.Auth;
+using Marten;
+using Microsoft.Extensions.DependencyInjection;
 using Voidforge.Api.Domain;
+using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Endpoints;
-using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
+using Wolverine;
 using Xunit;
 
 namespace Voidforge.Tests.Colonize;
@@ -29,7 +32,14 @@ public sealed class FullLoopEndToEndTests
     private const decimal _transportCargoIronOre = 100m;
     private const decimal _transportCargoIronIngot = 50m;
 
-    private static readonly TimeSpan _arrivalTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan _arrivalTimeout = TestTimeouts.FullLoopArrival;
+
+    // Ore carried off-planet in the capstone's resume leg. Deliberately LARGE (of the CargoVessel's
+    // 500 cap): the assemble endpoint reschedules a CheckStorageFull for when the freed pool would
+    // refill to capacity, so a tiny load would re-halt the Drill within ~2s. 400 leaves ~80s of
+    // headroom (400 / 5 net-ore-per-second) — well past this test's wall-clock — so the resumed Drill
+    // stays Operational through to the final read-API assertion.
+    private const decimal _capstoneOreCarriedOffPlanet = 400m;
 
     private readonly IAlbaHost _host;
 
@@ -41,8 +51,8 @@ public sealed class FullLoopEndToEndTests
     [Fact]
     public async Task EconomyToShipsToExpansionToSupplyingTheColonyCompletesTheFullLoop()
     {
-        var settler = await RegisterPlayer();
-        var homeworld = await GetPlanetById(settler, settler.HomeworldId);
+        var settler = await _host.RegisterPlayer("FullLoopE2E_");
+        var homeworld = await _host.GetPlanetById(settler, settler.HomeworldId);
 
         var destinationId = await ColonizeAnUncolonizedPlanetInAnotherSystem(settler, homeworld.SolarSystemId);
         await SupplyTheColonyViaTransport(settler, destinationId);
@@ -54,20 +64,20 @@ public sealed class FullLoopEndToEndTests
     // Vessel at the new colony. Returns the colonized planet's id for the Transport leg.
     private async Task<Guid> ColonizeAnUncolonizedPlanetInAnotherSystem(RegisterPlayerResponse settler, Guid homeSystemId)
     {
-        var colonyShipId = await BuildRosterShip(settler, ShipType.ColonyShip);
-        var cargoVesselId = await BuildRosterShip(settler, ShipType.CargoVessel);
-        await WaitForStock(settler, 150m, 100m);
+        var colonyShipId = await _host.BuildRosterShip(settler, ShipType.ColonyShip);
+        var cargoVesselId = await _host.BuildRosterShip(settler, ShipType.CargoVessel);
+        await _host.WaitForStock(settler, 150m, 100m);
 
-        var colonizeFleet = await AssembleFleet(
+        var colonizeFleet = await _host.AssembleFleet(
             settler, [colonyShipId, cargoVesselId], new CargoRequest(_colonizeCargoIronOre, _colonizeCargoIronIngot));
-        var destinationId = await UncolonizedPlanetInAnotherSystem(settler, homeSystemId);
+        var destinationId = await _host.FindUncolonizedPlanet(settler, excludeSystemId: homeSystemId);
 
-        var launchedColonize = await Launch(settler, colonizeFleet.Id, MissionType.Colonize, destinationId);
+        var launchedColonize = await _host.Launch(settler, colonizeFleet.Id, MissionType.Colonize, destinationId);
         Assert.Equal(FleetStatus.InTransit, launchedColonize.Status);
         Assert.Equal(destinationId, launchedColonize.DestinationPlanetId);
         Assert.Equal(MissionType.Colonize, launchedColonize.Mission);
 
-        var arrivedColonize = await PollFleetUntil(
+        var arrivedColonize = await _host.PollFleetUntil(
             settler,
             colonizeFleet.Id,
             f => f.Status == FleetStatus.Stationed && f.LocationPlanetId == destinationId,
@@ -80,7 +90,7 @@ public sealed class FullLoopEndToEndTests
         Assert.Equal(0m, arrivedColonize.CargoIronOre);           // auto-unloaded into the colony
         Assert.Equal(0m, arrivedColonize.CargoIronIngot);
 
-        var colony = await GetPlanetById(settler, destinationId);
+        var colony = await _host.GetPlanetById(settler, destinationId);
         Assert.Equal(settler.PlayerId, colony.OwnerId);
         // Planet.Claim seeds zero stores AND zero production rate (a fresh colony has no
         // buildings), so the exact-equality assertion is safe: nothing accrues between the
@@ -92,7 +102,7 @@ public sealed class FullLoopEndToEndTests
 
         // Disband the surviving Cargo Vessel at the new colony (cargo is already empty, so
         // D11's cargo-aboard guard doesn't block it).
-        var disbanded = await Disband(settler, colonizeFleet.Id);
+        var disbanded = await _host.Disband(settler, colonizeFleet.Id);
         Assert.Equal(FleetStatus.Disbanded, disbanded.Status);
 
         return destinationId;
@@ -104,18 +114,18 @@ public sealed class FullLoopEndToEndTests
     // planet via Move). Still a zero-production colony, so exact-equality delivery math holds.
     private async Task SupplyTheColonyViaTransport(RegisterPlayerResponse settler, Guid destinationId)
     {
-        var secondCargoVesselId = await BuildRosterShip(settler, ShipType.CargoVessel);
-        await WaitForStock(settler, 150m, 100m);
+        var secondCargoVesselId = await _host.BuildRosterShip(settler, ShipType.CargoVessel);
+        await _host.WaitForStock(settler, 150m, 100m);
 
-        var transportFleet = await AssembleFleet(
+        var transportFleet = await _host.AssembleFleet(
             settler, [secondCargoVesselId], new CargoRequest(_transportCargoIronOre, _transportCargoIronIngot));
 
-        var launchedTransport = await Launch(settler, transportFleet.Id, MissionType.Transport, destinationId);
+        var launchedTransport = await _host.Launch(settler, transportFleet.Id, MissionType.Transport, destinationId);
         Assert.Equal(FleetStatus.InTransit, launchedTransport.Status);
         Assert.Equal(destinationId, launchedTransport.DestinationPlanetId);
         Assert.Equal(MissionType.Transport, launchedTransport.Mission);
 
-        var arrivedTransport = await PollFleetUntil(
+        var arrivedTransport = await _host.PollFleetUntil(
             settler,
             transportFleet.Id,
             f => f.Status == FleetStatus.Stationed && f.LocationPlanetId == destinationId,
@@ -126,250 +136,260 @@ public sealed class FullLoopEndToEndTests
         Assert.Equal(0m, arrivedTransport.CargoIronOre);      // auto-delivered on arrival
         Assert.Equal(0m, arrivedTransport.CargoIronIngot);
 
-        var colonyAfterTransport = await GetPlanetById(settler, destinationId);
+        var colonyAfterTransport = await _host.GetPlanetById(settler, destinationId);
         Assert.Equal(settler.PlayerId, colonyAfterTransport.OwnerId);
         Assert.Equal(_colonizeCargoIronOre + _transportCargoIronOre, colonyAfterTransport.IronOre.CurrentValue);
         Assert.Equal(_colonizeCargoIronIngot + _transportCargoIronIngot, colonyAfterTransport.IronIngot.CurrentValue);
     }
 
-    private async Task<FleetResponse> Launch(
-        RegisterPlayerResponse registration, Guid fleetId, MissionType mission, Guid destinationPlanetId)
+    // #67 (score acceptance): register -> build an economy -> construct ships -> colonize, reading
+    // GET /api/players/me at three checkpoints and asserting the lazily-computed score REFLECTS the
+    // acquired assets.
+    //
+    // On assertion strategy (deliberate — the exact-value proof lives in ScoreCalculatorTests, which
+    // uses fixed pools with no live accrual):
+    //   * Every checkpoint asserts a computed LOWER BOUND from ScoringSpecs (planets + buildings +
+    //     ships only). Resource contributions are >= 0, so the durable-asset floor is always safe.
+    //   * We assert a STRICT increase ONLY for the colonize step (afterShips < afterColonize): it is
+    //     genuinely monotonic — between those two reads nothing is constructed (no resource drain),
+    //     the consumed Colony Ship (-ShipPoints) is outweighed by the new planet (+PointsPerPlanet),
+    //     and the loaded cargo merely MOVES homeworld -> fleet -> colony (all still owned, so the
+    //     resource term is conserved and only grows as the homeworld keeps producing).
+    //   * We do NOT assert register < afterShips: building the Shipyard + two ships DRAINS ore/ingot
+    //     from the homeworld, so the resource term can fall further than the +durable gain rises —
+    //     an exact/strict comparison there would be brittle. The lower-bound check covers it instead.
+    [Fact]
+    public async Task ScoreReflectsAssetsAcquiredAcrossTheFullLoop()
     {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new LaunchMissionRequest(mission, destinationPlanetId)).ToUrl($"/api/fleets/{fleetId}/missions");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
+        var settler = await _host.RegisterPlayer("ScoreLoopE2E_");
+        var homeworld = await _host.GetPlanet(settler);
 
-        var response = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<FleetResponse> AssembleFleet(
-        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds, CargoRequest? cargo = null)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new AssembleFleetRequest(shipIds, cargo)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    private async Task<FleetResponse> Disband(RegisterPlayerResponse registration, Guid fleetId)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Url($"/api/fleets/{fleetId}/disband");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    private async Task<FleetResponse> PollFleetUntil(
-        RegisterPlayerResponse registration, Guid fleetId, Func<FleetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        FleetResponse fleet;
-        do
-        {
-            fleet = await GetJson<FleetResponse>(registration, $"/api/fleets/{fleetId}");
-            if (predicate(fleet))
-            {
-                return fleet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return fleet;
-    }
-
-    // Builds an operational shipyard (once per homeworld — reused across calls) and queues one
-    // ship of the requested type, polling the roster until a ship absent from the pre-queue
-    // roster snapshot appears. Mirrors ColonizeMissionTests/ClaimRaceTests' BuildRosterShip so a
-    // homeworld can accumulate a Colony Ship, then a Cargo Vessel, then (after the first fleet's
-    // ships have left the roster via assembly) a second Cargo Vessel across three calls.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var before = (await GetRoster(registration)).Items.Select(i => i.Id).ToHashSet();
-
-        await EnsureOperationalShipyard(registration);
-        await QueueShip(registration, type);
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        do
-        {
-            var roster = await GetRoster(registration);
-            var added = roster.Items.Where(i => !before.Contains(i.Id)).ToList();
-            if (added.Count > 0)
-            {
-                return added[0].Id;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        throw new InvalidOperationException("Ship did not complete onto the roster in time.");
-    }
-
-    private async Task EnsureOperationalShipyard(RegisterPlayerResponse registration)
-    {
-        var planet = await GetPlanet(registration);
-        if (!planet.Buildings.Any(b => b.Type == BuildingType.Shipyard))
-        {
-            await _host.Scenario(s =>
-            {
-                s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                    .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-                s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-                s.StatusCodeShouldBe(200);
-            });
-        }
-
-        await PollUntil(
-            registration,
-            p => p.Buildings.Any(b => b.Type == BuildingType.Shipyard && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(20));
-    }
-
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PagedResponse<RosterShipResponse>> GetRoster(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}/ships?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var roster = await result.ReadAsJsonAsync<PagedResponse<RosterShipResponse>>();
-        Assert.NotNull(roster);
-        return roster;
-    }
-
-    // Waits for the homeworld's stored ore/ingot to reach at least the given amounts.
-    // Necessary because shipyard/ship construction (test-host drain rates) can crush the ingot
-    // pool to near zero for several seconds before production recovers it.
-    private async Task WaitForStock(RegisterPlayerResponse registration, decimal minOre, decimal minIngot)
-    {
-        var planet = await PollUntil(
-            registration,
-            p => p.IronOre.CurrentValue >= minOre && p.IronIngot.CurrentValue >= minIngot,
-            TimeSpan.FromSeconds(30));
-
+        // Checkpoint 1 — freshly seeded homeworld: 1 planet + Operational Drill + Refinery + Generator.
+        var registerFloor =
+            ScoringSpecs.PointsPerPlanet
+            + ScoringSpecs.BuildingPoints(BuildingType.Drill)
+            + ScoringSpecs.BuildingPoints(BuildingType.Refinery)
+            + ScoringSpecs.BuildingPoints(BuildingType.Generator);
+        var scoreAfterRegister = await _host.GetScore(settler);
         Assert.True(
-            planet.IronOre.CurrentValue >= minOre && planet.IronIngot.CurrentValue >= minIngot,
-            $"Stock did not recover in time: ore={planet.IronOre.CurrentValue} (need {minOre}), " +
-            $"ingot={planet.IronIngot.CurrentValue} (need {minIngot}).");
+            scoreAfterRegister >= registerFloor,
+            $"After register, score {scoreAfterRegister} should be >= planet+buildings floor {registerFloor}.");
+
+        // Build economy: a Shipyard (placed by the first BuildRosterShip) plus a Colony Ship and a
+        // Cargo Vessel on the roster.
+        var colonyShipId = await _host.BuildRosterShip(settler, ShipType.ColonyShip);
+        var cargoVesselId = await _host.BuildRosterShip(settler, ShipType.CargoVessel);
+        await _host.WaitForStock(settler, 150m, 100m);
+
+        // Checkpoint 2 — floor now includes the Shipyard and both roster ships.
+        var shipsFloor =
+            registerFloor
+            + ScoringSpecs.BuildingPoints(BuildingType.Shipyard)
+            + ScoringSpecs.ShipPoints(ShipType.ColonyShip)
+            + ScoringSpecs.ShipPoints(ShipType.CargoVessel);
+        var scoreAfterShips = await _host.GetScore(settler);
+        Assert.True(
+            scoreAfterShips >= shipsFloor,
+            $"After building ships, score {scoreAfterShips} should be >= floor {shipsFloor}.");
+
+        // Colonize a planet in ANOTHER system with both ships aboard: the Colony Ship is consumed on
+        // the claim, the Cargo Vessel survives in a Stationed fleet at the new colony (NOT disbanded,
+        // so it keeps counting), and the loaded cargo is delivered into the (owned) colony.
+        var colonizeFleet = await _host.AssembleFleet(
+            settler, [colonyShipId, cargoVesselId], new CargoRequest(_colonizeCargoIronOre, _colonizeCargoIronIngot));
+        var destinationId = await _host.FindUncolonizedPlanet(settler, excludeSystemId: homeworld.SolarSystemId);
+        var arrived = await _host.LaunchAndArriveInstantly(
+            settler, colonizeFleet.Id, MissionType.Colonize, destinationId);
+        Assert.Equal(FleetStatus.Stationed, arrived.Status);
+
+        // Checkpoint 3 — a SECOND owned planet appears. Strictly greater than checkpoint 2 (see the
+        // assertion-strategy note above) and clears the recomputed floor: +1 planet, -Colony Ship.
+        var colonizeFloor =
+            shipsFloor
+            + ScoringSpecs.PointsPerPlanet
+            - ScoringSpecs.ShipPoints(ShipType.ColonyShip);
+        var scoreAfterColonize = await _host.GetScore(settler);
+        Assert.True(
+            scoreAfterColonize > scoreAfterShips,
+            $"After colonizing, score {scoreAfterColonize} should strictly exceed the pre-colonize score {scoreAfterShips}.");
+        Assert.True(
+            scoreAfterColonize >= colonizeFloor,
+            $"After colonizing, score {scoreAfterColonize} should be >= floor {colonizeFloor}.");
     }
 
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
+    // #74 Task 4 (D13, capstone): the whole Phase-5 surface stitched into ONE cohesive flight,
+    // verified through the READ API — register -> build an economy -> a producer HALTS on
+    // storage-full (#69) -> transport ore away -> the producer RESUMES (#69/D6) -> CANCEL a build
+    // (#72) -> RECALL a fleet (#73/D10) -> COLONIZE (#51) -> assert final state via GET endpoints.
+    // Explicitly NO score assertion (D13).
+    //
+    // Determinism note (mirrors StorageHaltingTests / FleetRecallTests / ColonizeMissionTests): a
+    // 5 net-ore/s Drill would take ~1900s to fill the 10000-cap ore pool by wall clock, so the
+    // halt leg is driven by seeding the pool to capacity and invoking CheckStorageFullHandler
+    // DIRECTLY at that instant; the recall-return and colonize arrivals are driven by direct
+    // handler invocation (LaunchAndArriveInstantly / CompleteFleetArrivalHandler) rather than
+    // real-scheduler wall-clock waits. Everything else — register, place/cancel building, assemble,
+    // launch, recall, and all reads — runs through the real HTTP API. The existing full-loop test
+    // above already covers the real-scheduler Colonize + Transport arrivals, so this capstone does
+    // not duplicate that and uses the fast, deterministic handler-invocation path instead.
+    [Fact]
+    public async Task CapstoneHaltResumeCancelRecallColonizeVerifiedThroughTheReadApi()
     {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
-            {
-                return planet;
-            }
+        var settler = await _host.RegisterPlayer("Capstone74_");
+        var homeworld = await _host.GetPlanet(settler);
+        Assert.Equal(settler.PlayerId, homeworld.OwnerId);
 
-            await Task.Delay(500);
+        var (cargoVesselId, colonyShipId) = await BuildEconomy(settler);
+
+        await HaltHomeworldDrillOnStorageFull(settler);
+        var supplyFleetId = await TransportOreAwayAndResumeDrill(settler, cargoVesselId);
+        var cancelledSlot = await CancelAConstruction(settler);
+        await RecallTheSupplyFleet(settler, supplyFleetId);
+        var colonyId = await ColonizeAnUncolonizedPlanet(settler, homeworld.SolarSystemId, colonyShipId);
+
+        await AssertFinalStateThroughTheReadApi(settler, supplyFleetId, cancelledSlot, colonyId);
+    }
+
+    // Economy: BuildRosterShip places an operational Shipyard via the API on the first call, then
+    // completes each ship onto the roster. One CargoVessel (carries ore off-planet for the resume +
+    // recall legs) and one ColonyShip (the colonize leg).
+    private async Task<(Guid CargoVesselId, Guid ColonyShipId)> BuildEconomy(RegisterPlayerResponse settler)
+    {
+        var cargoVesselId = await _host.BuildRosterShip(settler, ShipType.CargoVessel);
+        var colonyShipId = await _host.BuildRosterShip(settler, ShipType.ColonyShip);
+        return (cargoVesselId, colonyShipId);
+    }
+
+    // Producer halts on storage-full (#69), made deterministic exactly as StorageHaltingTests do:
+    // pin the ore pool to capacity with a single oversized CargoDeliveredToStorage (Apply clamps
+    // CheckpointValue + amount into [0, cap]) and drive CheckStorageFullHandler DIRECTLY at that
+    // instant. Only this fill/halt leg uses the handler-invocation shortcut — a real-scheduler fill
+    // cannot fit the timeout budget.
+    private async Task HaltHomeworldDrillOnStorageFull(RegisterPlayerResponse settler)
+    {
+        var planetId = settler.HomeworldId;
+        var before = await _host.GetPlanet(settler);
+        var at = DateTimeOffset.UtcNow;
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+
+        await using (var seedSession = store.LightweightSession())
+        {
+            var seedStream = await seedSession.Events.FetchForWriting<Planet>(planetId);
+            seedStream.AppendOne(new CargoDeliveredToStorage(
+                Guid.NewGuid(), before.IronOre.StorageCapacity, 0m, at));
+            await seedSession.SaveChangesAsync();
         }
-        while (DateTime.UtcNow < deadline);
 
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-        => await GetPlanetById(registration, registration.HomeworldId);
-
-    // Finds an uncolonized planet in a DIFFERENT solar system than the caller's homeworld,
-    // through the public solar-systems listing (the real player-visible read path, matching
-    // ClaimRaceTests.UncolonizedPlanetId) rather than a raw store query. Relies on the
-    // IntegrationCollection's serialized test execution (no concurrent writer between this scan
-    // and the subsequent launches) — must not be copied into a parallel context.
-    private async Task<Guid> UncolonizedPlanetInAnotherSystem(RegisterPlayerResponse asWhom, Guid homeSystemId)
-    {
-        var systems = await GetJson<PagedResponse<SolarSystemResponse>>(asWhom, "/api/solar-systems?pageSize=200");
-
-        foreach (var system in systems.Items)
+        using (var scope = _host.Services.CreateScope())
         {
-            if (system.Id == homeSystemId)
-            {
-                continue;
-            }
-
-            foreach (var planetId in system.PlanetIds)
-            {
-                var planet = await GetPlanetById(asWhom, planetId);
-                if (planet.OwnerId is null)
-                {
-                    return planet.Id;
-                }
-            }
+            var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+            await using var session = store.LightweightSession();
+            await CheckStorageFullHandler.Handle(
+                new CheckStorageFull(planetId, ResourceType.IronOre, at), session, bus);
         }
 
-        throw new InvalidOperationException("No uncolonized planet found in another solar system across the listed solar systems.");
+        var halted = await _host.PollBuildingUntilHalted(settler, BuildingType.Drill, HaltReason.OutputStorageFull);
+        Assert.Equal(BuildingStatus.Halted, halted.Status);
+        Assert.Equal(HaltReason.OutputStorageFull, halted.HaltReason);
     }
 
-    private async Task<PlanetResponse> GetPlanetById(RegisterPlayerResponse asWhom, Guid planetId)
-        => await GetJson<PlanetResponse>(asWhom, $"/api/planets/{planetId}");
-
-    private async Task<T> GetJson<T>(RegisterPlayerResponse registration, string url)
+    // Transport ore off-planet -> the freed output storage resumes the Drill in the SAME assemble
+    // commit (D6, #69). The loaded CargoVessel fleet is returned so the recall leg can reuse it.
+    private async Task<Guid> TransportOreAwayAndResumeDrill(RegisterPlayerResponse settler, Guid cargoVesselId)
     {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url(url);
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
+        var fleet = await _host.AssembleFleet(
+            settler, [cargoVesselId], new CargoRequest(_capstoneOreCarriedOffPlanet, 0m));
+        Assert.Equal(_capstoneOreCarriedOffPlanet, fleet.CargoIronOre);   // ore transported off the planet
 
-        var response = await result.ReadAsJsonAsync<T>();
-        Assert.NotNull(response);
-        return response;
+        var resumed = await _host.PollBuildingUntilOperational(settler, BuildingType.Drill);
+        Assert.Equal(BuildingStatus.Operational, resumed.Status);
+        Assert.Null(resumed.HaltReason);
+
+        var afterResume = await _host.GetPlanet(settler);
+        Assert.True(
+            afterResume.IronOre.Rate > 0m,
+            $"Resumed Drill should produce ore again: rate={afterResume.IronOre.Rate}.");
+        return fleet.Id;
     }
 
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
+    // Cancel a build (#72): place a Generator construction via the API and cancel it while it is
+    // still UnderConstruction (the 5s test build duration is a comfortable window). The slot becomes
+    // a Cancelled tombstone. A Generator (not a Drill) is chosen so the single-Drill halt/resume
+    // assertions stay unambiguous. Returns the tombstoned slot index for the final read.
+    private async Task<int> CancelAConstruction(RegisterPlayerResponse settler)
     {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"FullLoopE2E_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
+        var placed = await _host.PlaceBuilding(settler, BuildingType.Generator);
+        var slotIndex = placed.Buildings.Count - 1;
+        Assert.Equal(BuildingStatus.UnderConstruction, placed.Buildings[slotIndex].Status);
 
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
+        await _host.CancelConstruction(settler, slotIndex);
+
+        var afterCancel = await _host.GetPlanet(settler);
+        Assert.Equal(BuildingStatus.Cancelled, afterCancel.Buildings[slotIndex].Status);
+        return slotIndex;
+    }
+
+    // Recall (#73/D10): send the supply fleet outbound on a Move, then recall it — it turns around
+    // and heads back to its origin. Launch + recall run through the real HTTP API; the return
+    // arrival is driven by invoking CompleteFleetArrivalHandler at the recall's fresh ArrivesAt
+    // (mirrors FleetRecallTests), idempotent if the durable scheduler already landed it.
+    private async Task RecallTheSupplyFleet(RegisterPlayerResponse settler, Guid fleetId)
+    {
+        var destination = await _host.FindPlanetOtherThan(settler);
+        await _host.Launch(settler, fleetId, MissionType.Move, destination);
+
+        var recalled = await _host.Recall(settler, fleetId);
+        Assert.Equal(FleetStatus.InTransit, recalled.Status);
+        Assert.Equal(settler.HomeworldId, recalled.DestinationPlanetId);   // heading back to origin
+        Assert.NotNull(recalled.RecalledAt);
+        Assert.NotNull(recalled.ArrivesAt);
+
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        await using var session = store.LightweightSession();
+        await CompleteFleetArrivalHandler.Handle(
+            new CompleteFleetArrival(fleetId, recalled.ArrivesAt.Value), session);
+    }
+
+    // Colonize (#51): assemble the ColonyShip and claim an uncolonized planet in ANOTHER system.
+    // Launch runs through the real HTTP API; the arrival is driven by the shared
+    // LaunchAndArriveInstantly handler-invocation helper. Returns the colonized planet's id.
+    private async Task<Guid> ColonizeAnUncolonizedPlanet(
+        RegisterPlayerResponse settler, Guid homeSystemId, Guid colonyShipId)
+    {
+        var colonizeFleet = await _host.AssembleFleet(settler, [colonyShipId]);
+        var destinationId = await _host.FindUncolonizedPlanet(settler, excludeSystemId: homeSystemId);
+
+        var arrived = await _host.LaunchAndArriveInstantly(
+            settler, colonizeFleet.Id, MissionType.Colonize, destinationId);
+        Assert.Equal(FleetStatus.Stationed, arrived.Status);
+        Assert.Equal(destinationId, arrived.LocationPlanetId);
+        Assert.DoesNotContain(arrived.Ships, s => s.Id == colonyShipId);   // colony ship consumed on claim
+        return destinationId;
+    }
+
+    // Final state, read entirely through the public GET API (D13: NO score assertion).
+    private async Task AssertFinalStateThroughTheReadApi(
+        RegisterPlayerResponse settler, Guid supplyFleetId, int cancelledSlot, Guid colonyId)
+    {
+        // Homeworld: the Drill resumed (Operational, no halt reason), its output pool sits below cap,
+        // and the cancelled construction is a terminal tombstone.
+        var homeworld = await _host.GetPlanet(settler);
+        var drill = homeworld.Buildings.Single(b => b.Type == BuildingType.Drill);
+        Assert.Equal(BuildingStatus.Operational, drill.Status);
+        Assert.Null(drill.HaltReason);
+        Assert.True(
+            homeworld.IronOre.CurrentValue < homeworld.IronOre.StorageCapacity,
+            $"Ore should be below cap after the off-planet load: {homeworld.IronOre.CurrentValue} / {homeworld.IronOre.StorageCapacity}.");
+        Assert.Equal(BuildingStatus.Cancelled, homeworld.Buildings[cancelledSlot].Status);
+
+        // Supply fleet: recalled home — Stationed at the origin with its carried ore intact.
+        var supplyFleet = await _host.GetJson<FleetResponse>(settler, $"/api/fleets/{supplyFleetId}");
+        Assert.Equal(FleetStatus.Stationed, supplyFleet.Status);
+        Assert.Equal(settler.HomeworldId, supplyFleet.LocationPlanetId);
+        Assert.Equal(_capstoneOreCarriedOffPlanet, supplyFleet.CargoIronOre);
+
+        // Colony: owned by the settler after the Colonize claim.
+        var colony = await _host.GetPlanetById(settler, colonyId);
+        Assert.Equal(settler.PlayerId, colony.OwnerId);
     }
 }

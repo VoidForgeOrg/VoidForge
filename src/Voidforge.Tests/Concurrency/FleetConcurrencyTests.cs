@@ -3,6 +3,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Concurrency;
@@ -25,9 +26,9 @@ public sealed class FleetConcurrencyTests
     [Fact]
     public async Task ConcurrentAssemblesOfTheSameShipYieldExactlyOneFleet()
     {
-        var registration = await RegisterPlayer();
-        await BuildOperationalShipyard(registration);
-        var shipId = await BuildRosterShip(registration);
+        var registration = await _host.RegisterPlayer("FleetConcurrency_");
+        await _host.EnsureOperationalShipyard(registration);
+        var shipId = await _host.BuildRosterShip(registration);
 
         var attempts = await Task.WhenAll(
             TryAssemble(registration, [shipId]),
@@ -38,7 +39,7 @@ public sealed class FleetConcurrencyTests
         Assert.Equal(1, attempts.Count(status => status == 200));
         Assert.Equal(1, attempts.Count(status => status == 409));
 
-        var fleets = await GetJson<PagedResponse<FleetSummaryResponse>>(registration, "/api/fleets");
+        var fleets = await _host.GetJson<PagedResponse<FleetSummaryResponse>>(registration, "/api/fleets");
         var fleet = Assert.Single(fleets.Items);
         Assert.Equal(1, fleet.ShipCount);
     }
@@ -46,10 +47,10 @@ public sealed class FleetConcurrencyTests
     [Fact]
     public async Task ConcurrentLaunchesYieldExactlyOneDeparture()
     {
-        var owner = await RegisterPlayer();
-        var beta = await RegisterPlayer();
-        var shipId = await BuildRosterShip(owner);
-        var fleet = await AssembleFleet(owner, [shipId]);
+        var owner = await _host.RegisterPlayer("FleetConcurrency_");
+        var beta = await _host.RegisterPlayer("FleetConcurrency_");
+        var shipId = await _host.BuildRosterShip(owner);
+        var fleet = await _host.AssembleFleet(owner, [shipId]);
 
         var attempts = await Task.WhenAll(
             TryLaunch(owner, fleet.Id, beta.HomeworldId),
@@ -61,7 +62,7 @@ public sealed class FleetConcurrencyTests
         Assert.Equal(1, attempts.Count(status => status == 200));
         Assert.Equal(1, attempts.Count(status => status == 409));
 
-        var fetched = await GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
+        var fetched = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(FleetStatus.InTransit, fetched.Status);
         Assert.NotNull(fetched.ArrivesAt);
     }
@@ -69,10 +70,14 @@ public sealed class FleetConcurrencyTests
     [Fact]
     public async Task ConcurrentDisbandsOfTheSameFleetYieldExactlyOneSuccess()
     {
-        var registration = await RegisterPlayer();
-        await BuildOperationalShipyard(registration);
-        var shipId = await BuildRosterShip(registration);
-        var fleet = await AssembleFleet(registration, [shipId]);
+        var registration = await _host.RegisterPlayer("FleetConcurrency_");
+        await _host.EnsureOperationalShipyard(registration);
+        var shipId = await _host.BuildRosterShip(registration);
+
+        // #58: settle the arrangement against the homeworld's live-production stream contention
+        // (see AssembleFleetSettled) so the ONLY contention the assertions below observe is the
+        // intended two-disband race on the fleet + planet streams.
+        var fleet = await AssembleFleetSettled(registration, [shipId]);
 
         var attempts = await Task.WhenAll(
             TryDisband(registration, fleet.Id),
@@ -84,24 +89,19 @@ public sealed class FleetConcurrencyTests
         Assert.Equal(1, attempts.Count(status => status == 200));
         Assert.Equal(1, attempts.Count(status => status is 409 or 404));
 
-        var roster = await GetRoster(registration);
+        var roster = await _host.GetRoster(registration);
         Assert.Single(roster.Items, s => s.Id == shipId);
     }
 
     // Fire an Assemble command and return only its status code (no auto-assert).
-    private async Task<int> TryAssemble(RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new AssembleFleetRequest(shipIds)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.IgnoreStatusCode();
-        });
-
-        return result.Context.Response.StatusCode;
-    }
+    private Task<int> TryAssemble(RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds)
+        => _host.PostForStatus(
+            registration,
+            $"/api/planets/{registration.HomeworldId}/fleets",
+            new AssembleFleetRequest(shipIds));
 
     // Fire a Disband command and return only its status code (no auto-assert).
+    // Stays hand-rolled: disband POSTs without a JSON body, which PostForStatus always sends.
     private async Task<int> TryDisband(RegisterPlayerResponse registration, Guid fleetId)
     {
         var result = await _host.Scenario(s =>
@@ -115,160 +115,65 @@ public sealed class FleetConcurrencyTests
     }
 
     // Fire a Launch (Move) command and return only its status code (no auto-assert).
-    private async Task<int> TryLaunch(RegisterPlayerResponse registration, Guid fleetId, Guid destinationPlanetId)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new LaunchMissionRequest(MissionType.Move, destinationPlanetId))
-                .ToUrl($"/api/fleets/{fleetId}/missions");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.IgnoreStatusCode();
-        });
-
-        return result.Context.Response.StatusCode;
-    }
-
-    private async Task<FleetResponse> AssembleFleet(RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new AssembleFleetRequest(shipIds)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    // Builds an operational shipyard, queues one CargoVessel (~2s build), and polls the
-    // roster until it appears. Returns the completed ship's id.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration)
-    {
-        await BuildOperationalShipyard(registration);
-        await QueueShip(registration, ShipType.CargoVessel);
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        do
-        {
-            var roster = await GetRoster(registration);
-            if (roster.Items.Count > 0)
-            {
-                return roster.Items[0].Id;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        throw new InvalidOperationException("Ship did not complete onto the roster in time.");
-    }
-
-    private async Task BuildOperationalShipyard(RegisterPlayerResponse registration)
-    {
-        await _host.Scenario(s =>
-        {
-            s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        await PollUntil(
+    private Task<int> TryLaunch(RegisterPlayerResponse registration, Guid fleetId, Guid destinationPlanetId)
+        => _host.PostForStatus(
             registration,
-            p => p.Buildings.Any(b => b.Type == BuildingType.Shipyard && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(20));
-    }
+            $"/api/fleets/{fleetId}/missions",
+            new LaunchMissionRequest(MissionType.Move, destinationPlanetId));
 
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
+    // #58 deterministic arrangement. Assemble the fleet at the homeworld, retrying across a BENIGN
+    // transient optimistic-concurrency 409 so a background collision can't fail the *arrangement*
+    // (the reported flake was a non-200 thrown from an arrangement step, not the disband race).
+    //
+    // Mechanism: the arrangement drives real appends to the homeworld PLANET stream — the ship-build
+    // completion (CompleteShipConstruction → ShipCompleted) and each commit's cascade-check scheduling
+    // (#69/#70) — and the Solo durability agent continuously polls the shared event store's outbox
+    // while every other test in the collection hammers the same tables. Assemble also appends to the
+    // homeworld stream (ShipsRemovedFromRoster, via FetchForWriting<Planet>), so under CI load it can
+    // lose its optimistic-concurrency guard to a colliding commit inside its narrow fetch→commit
+    // window; that surfaces to the caller as a transient 409 (ConcurrencyConflictExceptionHandler) —
+    // the duplicate-key retry storm #58 saw. (The seeded homeworld's own storage-full/depletion checks
+    // are scheduled minutes out and do NOT fire during a seconds-long test — the contention is
+    // background durable-message processing on the shared store, not those checks landing.)
+    //
+    // The collision is benign: the ship is already settled on the roster and owned by the caller. The
+    // homeworld OwnerId that Apply(ShipCompleted) stamps onto each RosterShip is set by PlanetColonized
+    // at registration (before any ship or building exists) and is immutable in the MVP; inline snapshots
+    // always apply events in stream order, so ShipCompleted can never observe a stale/absent OwnerId —
+    // even under Quick append + ConcurrencyException retries (a retry re-runs against the committed
+    // snapshot, which already carries the owner). The "stale OwnerId under Quick-append + retry" domain
+    // race hypothesized in #58 is therefore ruled out; the flake is stream *contention*, not a
+    // correctness bug. Retrying the assemble across the 409 removes that contention from the arrangement
+    // without touching the disband race. A non-409 status (e.g. a genuine 403 ownership failure) is NOT
+    // a benign concurrency outcome and fails loudly — #58 asks to understand, not suppress.
+    private async Task<FleetResponse> AssembleFleetSettled(
+        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds)
     {
-        var result = await _host.Scenario(s =>
+        const int maxAttempts = 5;
+        for (var attempt = 1; ; attempt++)
         {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PagedResponse<RosterShipResponse>> GetRoster(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}/ships?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var roster = await result.ReadAsJsonAsync<PagedResponse<RosterShipResponse>>();
-        Assert.NotNull(roster);
-        return roster;
-    }
-
-    private async Task<T> GetJson<T>(RegisterPlayerResponse registration, string url)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url(url);
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<T>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
+            var result = await _host.Scenario(s =>
             {
-                return planet;
+                s.Post.Json(new AssembleFleetRequest(shipIds))
+                    .ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
+                s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+                s.IgnoreStatusCode();
+            });
+
+            var status = result.Context.Response.StatusCode;
+            if (status == 200)
+            {
+                var fleet = await result.ReadAsJsonAsync<FleetResponse>();
+                Assert.NotNull(fleet);
+                return fleet;
             }
 
-            await Task.Delay(500);
+            // Only a transient optimistic-concurrency 409 is retryable; anything else is a real failure.
+            Assert.True(
+                status == 409 && attempt < maxAttempts,
+                $"Assemble arrangement returned {status} on attempt {attempt}/{maxAttempts} " +
+                "(only a transient 409 is retried).");
+            await Task.Delay(TestTimeouts.PollInterval);
         }
-        while (DateTime.UtcNow < deadline);
-
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var planet = await result.ReadAsJsonAsync<PlanetResponse>();
-        Assert.NotNull(planet);
-        return planet;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"FleetConcurrency_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }

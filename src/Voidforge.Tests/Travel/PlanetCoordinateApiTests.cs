@@ -5,6 +5,7 @@ using Voidforge.Api.Auth;
 using Voidforge.Api.Endpoints;
 using Voidforge.Api.Pagination;
 using Voidforge.Api.WorldGeneration;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Travel;
@@ -24,7 +25,7 @@ public sealed class PlanetCoordinateApiTests
     [Fact]
     public async Task PlanetCoordinatesAreWithinSpreadOfItsSolarSystem()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("Coord_Test_");
 
         var planetResult = await _host.Scenario(s =>
         {
@@ -49,19 +50,5 @@ public sealed class PlanetCoordinateApiTests
         Assert.InRange(planet.X, system.X - _planetSpread, system.X + _planetSpread);
         Assert.InRange(planet.Y, system.Y - _planetSpread, system.Y + _planetSpread);
         Assert.InRange(planet.Z, system.Z - _planetSpread, system.Z + _planetSpread);
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"Coord_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }

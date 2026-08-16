@@ -28,5 +28,15 @@ public static class CompleteShipConstructionHandler
         stream.AppendMany([.. events]);
         await ShipConstructionScheduling.ScheduleStartedBuildsAsync(bus, message.PlanetId, events);
         await session.SaveChangesAsync();
+
+        // A completed build drops its ingot drain (and any auto-started build changes it again),
+        // shifting the ingot fill deadline. Reschedule from the FRESH post-commit aggregate —
+        // AppendMany does not re-apply events to stream.Aggregate, so the stale `planet` has old rates (#69).
+        var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
+        if (updated is not null)
+        {
+            await StorageHaltScheduling.ScheduleAllChecksAsync(
+                bus, message.PlanetId, updated, message.CompletesAt);
+        }
     }
 }

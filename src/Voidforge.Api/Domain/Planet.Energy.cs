@@ -17,10 +17,16 @@ public sealed partial class Planet
             .Where(b => b.Type != BuildingType.Shipyard)
             .Sum(b => BuildingSpecs.EnergyDrawMw(b.Type));
 
+        // Halted buildings are NOT in the Operational set (they stopped producing), but they still
+        // draw a 5% idle floor (#69). Distinct term so it survives both return paths below.
+        var haltedDraw = Buildings
+            .Where(b => b.Status == BuildingStatus.Halted)
+            .Sum(b => BuildingSpecs.HaltedDrawFactor * BuildingSpecs.EnergyDrawMw(b.Type));
+
         var shipyardCount = operational.Count(b => b.Type == BuildingType.Shipyard);
         if (shipyardCount == 0)
         {
-            return nonShipyardDraw;
+            return nonShipyardDraw + haltedDraw;
         }
 
         // Fungible bays: work concentrates into as few shipyards as possible. Those drawing full
@@ -32,7 +38,7 @@ public sealed partial class Planet
         var shipyardDraw = (activeShipyards * full)
             + ((shipyardCount - activeShipyards) * BuildingSpecs.ShipyardIdleDrawFactor * full);
 
-        return nonShipyardDraw + shipyardDraw;
+        return nonShipyardDraw + shipyardDraw + haltedDraw;
     }
 
     // In [0, 1]: 1 when demand is met (or there is no demand), generation/consumption

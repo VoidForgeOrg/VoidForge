@@ -10,6 +10,7 @@ using Voidforge.Api.Documents;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Http;
 using Voidforge.Api.OpenApi;
+using Voidforge.Api.Scoring;
 using Voidforge.Api.Travel;
 using Voidforge.Api.WorldGeneration;
 using Wolverine;
@@ -35,6 +36,7 @@ builder.Services.AddMarten(opts =>
     opts.Projections.Snapshot<Planet>(SnapshotLifecycle.Inline);
     opts.Projections.Snapshot<Fleet>(SnapshotLifecycle.Inline);
     opts.Schema.For<Player>().UniqueIndex(x => x.Name);
+    opts.Schema.For<WorldSeedMarker>();
 })
 .UseLightweightSessions()
 .IntegrateWithWolverine();
@@ -77,9 +79,19 @@ builder.Services.AddWolverineHttp();
 // conflicting commit is issued by Wolverine's transactional middleware after the endpoint returns,
 // so it must be handled here rather than inside the endpoint.
 builder.Services.AddExceptionHandler<ConcurrencyConflictExceptionHandler>();
-builder.Services.AddProblemDetails();
+// One uniform error shape for every non-2xx (D12/#74): stamp each ProblemDetails with the request
+// path as `Instance` and a `traceId` extension for correlation. Title/type are left to the framework
+// defaults derived from the status code so the shape stays consistent across endpoints and the
+// concurrency handler (which emits through this same IProblemDetailsService).
+builder.Services.AddProblemDetails(options =>
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Instance = context.HttpContext.Request.Path;
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    });
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ITravelPlanner, LinearTravelPlanner>();
+builder.Services.AddSingleton<ScoreCalculator>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opts =>
 {

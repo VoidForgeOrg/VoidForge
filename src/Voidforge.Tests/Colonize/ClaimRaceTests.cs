@@ -2,11 +2,10 @@ using Alba;
 using JasperFx;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
-using Voidforge.Api.Auth;
 using Voidforge.Api.Domain;
 using Voidforge.Api.Domain.Events;
 using Voidforge.Api.Endpoints;
-using Voidforge.Api.Pagination;
+using Voidforge.Tests.Support;
 using Xunit;
 
 namespace Voidforge.Tests.Colonize;
@@ -49,13 +48,13 @@ public sealed class ClaimRaceTests
     [Fact]
     public async Task SequentialRegistrationStillSucceedsAndOwnsItsHomeworld()
     {
-        var registration = await RegisterPlayer();
+        var registration = await _host.RegisterPlayer("ClaimRace_Test_");
 
         Assert.NotEqual(Guid.Empty, registration.PlayerId);
         Assert.StartsWith("vf_", registration.ApiKey, StringComparison.Ordinal);
         Assert.NotEqual(Guid.Empty, registration.HomeworldId);
 
-        var homeworld = await GetPlanetById(registration, registration.HomeworldId);
+        var homeworld = await _host.GetPlanetById(registration, registration.HomeworldId);
         Assert.Equal(registration.PlayerId, homeworld.OwnerId);
         Assert.True(homeworld.IronOre.CurrentValue > 0);
         Assert.True(homeworld.IronIngot.CurrentValue > 0);
@@ -64,7 +63,8 @@ public sealed class ClaimRaceTests
     [Fact]
     public async Task FiveConcurrentRegistrationsAllSucceedWithDistinctHomeworldsOwnedByTheirRegistrants()
     {
-        var registrations = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => RegisterPlayer()));
+        var registrations = await Task.WhenAll(
+            Enumerable.Range(0, 5).Select(_ => _host.RegisterPlayer("ClaimRace_Test_")));
 
         // All five requests carry distinct auto-generated names (RegisterPlayer's Guid
         // suffix) and none may collide on a homeworld — the guarded claim (#51, closes #19)
@@ -74,7 +74,7 @@ public sealed class ClaimRaceTests
 
         foreach (var registration in registrations)
         {
-            var homeworld = await GetPlanetById(registration, registration.HomeworldId);
+            var homeworld = await _host.GetPlanetById(registration, registration.HomeworldId);
             Assert.Equal(registration.PlayerId, homeworld.OwnerId);
         }
     }
@@ -95,8 +95,8 @@ public sealed class ClaimRaceTests
     [Fact]
     public async Task ContestedPlanetAppendLosesWithConcurrencyExceptionDeterministically()
     {
-        var registration = await RegisterPlayer();
-        var planetId = await UncolonizedPlanetId(registration);
+        var registration = await _host.RegisterPlayer("ClaimRace_Test_");
+        var planetId = await _host.FindUncolonizedPlanet(registration);
 
         var store = _host.Services.GetRequiredService<IDocumentStore>();
 
@@ -119,9 +119,9 @@ public sealed class ClaimRaceTests
     [Fact]
     public async Task TwoFleetsRacingToColonizeTheSamePlanetYieldExactlyOneWinnerWithConservedCargo()
     {
-        var alpha = await RegisterPlayer();
-        var beta = await RegisterPlayer();
-        var destinationId = await UncolonizedPlanetId(alpha);
+        var alpha = await _host.RegisterPlayer("ClaimRace_Test_");
+        var beta = await _host.RegisterPlayer("ClaimRace_Test_");
+        var destinationId = await _host.FindUncolonizedPlanet(alpha);
 
         var (alphaFleet, alphaArrivesAt) = await BuildAndLaunchColonizeFleet(alpha, destinationId);
         var (betaFleet, betaArrivesAt) = await BuildAndLaunchColonizeFleet(beta, destinationId);
@@ -134,7 +134,7 @@ public sealed class ClaimRaceTests
             ArriveWithRetry(store, alphaFleet.Id, alphaArrivesAt),
             ArriveWithRetry(store, betaFleet.Id, betaArrivesAt));
 
-        var destination = await GetPlanetById(alpha, destinationId);
+        var destination = await _host.GetPlanetById(alpha, destinationId);
         Assert.True(
             destination.OwnerId == alpha.PlayerId || destination.OwnerId == beta.PlayerId,
             "Exactly one racer must own the destination planet after both arrivals resolve.");
@@ -145,8 +145,8 @@ public sealed class ClaimRaceTests
         var winnerFleetId = winnerIsAlpha ? alphaFleet.Id : betaFleet.Id;
         var loserFleetId = winnerIsAlpha ? betaFleet.Id : alphaFleet.Id;
 
-        var winnerFleet = await GetJson<FleetResponse>(winner, $"/api/fleets/{winnerFleetId}");
-        var loserFleet = await GetJson<FleetResponse>(loser, $"/api/fleets/{loserFleetId}");
+        var winnerFleet = await _host.GetJson<FleetResponse>(winner, $"/api/fleets/{winnerFleetId}");
+        var loserFleet = await _host.GetJson<FleetResponse>(loser, $"/api/fleets/{loserFleetId}");
 
         // Winner: the Colony Ship is consumed (each fleet carried exactly one Colony Ship, so
         // it is trivially also the oldest — ConsumeColonyShip's deterministic pick is proven
@@ -208,216 +208,15 @@ public sealed class ClaimRaceTests
     private async Task<(FleetResponse Fleet, DateTimeOffset ArrivesAt)> BuildAndLaunchColonizeFleet(
         RegisterPlayerResponse registration, Guid destinationId)
     {
-        var colonyShipId = await BuildRosterShip(registration, ShipType.ColonyShip);
-        var cargoVesselId = await BuildRosterShip(registration, ShipType.CargoVessel);
-        await WaitForStock(registration, 150m, 100m);
-        var fleet = await AssembleFleet(
+        var colonyShipId = await _host.BuildRosterShip(registration, ShipType.ColonyShip);
+        var cargoVesselId = await _host.BuildRosterShip(registration, ShipType.CargoVessel);
+        await _host.WaitForStock(registration, 150m, 100m);
+        var fleet = await _host.AssembleFleet(
             registration, [colonyShipId, cargoVesselId], new CargoRequest(_raceCargoIronOre, _raceCargoIronIngot));
 
-        var launched = await Launch(registration, fleet.Id, MissionType.Colonize, destinationId);
+        var launched = await _host.Launch(registration, fleet.Id, MissionType.Colonize, destinationId);
         Assert.NotNull(launched.ArrivesAt);
 
         return (launched, launched.ArrivesAt.Value);
-    }
-
-    private async Task<FleetResponse> Launch(
-        RegisterPlayerResponse registration, Guid fleetId, MissionType mission, Guid destinationPlanetId)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new LaunchMissionRequest(mission, destinationPlanetId)).ToUrl($"/api/fleets/{fleetId}/missions");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<FleetResponse> AssembleFleet(
-        RegisterPlayerResponse registration, IReadOnlyList<Guid> shipIds, CargoRequest? cargo = null)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new AssembleFleetRequest(shipIds, cargo)).ToUrl($"/api/planets/{registration.HomeworldId}/fleets");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var fleet = await result.ReadAsJsonAsync<FleetResponse>();
-        Assert.NotNull(fleet);
-        return fleet;
-    }
-
-    // Builds an operational shipyard (once per homeworld — reused across calls) and queues
-    // one ship of the requested type, polling the roster until a ship absent from the
-    // pre-queue roster snapshot appears. Mirrors ColonizeMissionTests.BuildRosterShip so a
-    // homeworld can accumulate both a Colony Ship and a Cargo Vessel across two calls.
-    private async Task<Guid> BuildRosterShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var before = (await GetRoster(registration)).Items.Select(i => i.Id).ToHashSet();
-
-        await EnsureOperationalShipyard(registration);
-        await QueueShip(registration, type);
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        do
-        {
-            var roster = await GetRoster(registration);
-            var added = roster.Items.Where(i => !before.Contains(i.Id)).ToList();
-            if (added.Count > 0)
-            {
-                return added[0].Id;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        throw new InvalidOperationException("Ship did not complete onto the roster in time.");
-    }
-
-    private async Task EnsureOperationalShipyard(RegisterPlayerResponse registration)
-    {
-        var planet = await GetPlanet(registration);
-        if (!planet.Buildings.Any(b => b.Type == BuildingType.Shipyard))
-        {
-            await _host.Scenario(s =>
-            {
-                s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
-                    .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
-                s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-                s.StatusCodeShouldBe(200);
-            });
-        }
-
-        await PollUntil(
-            registration,
-            p => p.Buildings.Any(b => b.Type == BuildingType.Shipyard && b.Status == BuildingStatus.Operational),
-            TimeSpan.FromSeconds(20));
-    }
-
-    private async Task<ShipBuildResponse> QueueShip(RegisterPlayerResponse registration, ShipType type)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new QueueShipRequest(type))
-                .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
-        Assert.NotNull(build);
-        return build;
-    }
-
-    private async Task<PagedResponse<RosterShipResponse>> GetRoster(RegisterPlayerResponse registration)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url($"/api/planets/{registration.HomeworldId}/ships?pageSize=200");
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var roster = await result.ReadAsJsonAsync<PagedResponse<RosterShipResponse>>();
-        Assert.NotNull(roster);
-        return roster;
-    }
-
-    // Waits for the homeworld's stored ore/ingot to reach at least the given amounts.
-    // Necessary because shipyard/ship construction (test-host drain rates) can crush the
-    // ingot pool to near zero for several seconds before production recovers it.
-    private async Task WaitForStock(RegisterPlayerResponse registration, decimal minOre, decimal minIngot)
-    {
-        var planet = await PollUntil(
-            registration,
-            p => p.IronOre.CurrentValue >= minOre && p.IronIngot.CurrentValue >= minIngot,
-            TimeSpan.FromSeconds(30));
-
-        Assert.True(
-            planet.IronOre.CurrentValue >= minOre && planet.IronIngot.CurrentValue >= minIngot,
-            $"Stock did not recover in time: ore={planet.IronOre.CurrentValue} (need {minOre}), " +
-            $"ingot={planet.IronIngot.CurrentValue} (need {minIngot}).");
-    }
-
-    private async Task<PlanetResponse> PollUntil(
-        RegisterPlayerResponse registration, Func<PlanetResponse, bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        PlanetResponse planet;
-        do
-        {
-            planet = await GetPlanet(registration);
-            if (predicate(planet))
-            {
-                return planet;
-            }
-
-            await Task.Delay(500);
-        }
-        while (DateTime.UtcNow < deadline);
-
-        return planet;
-    }
-
-    private async Task<PlanetResponse> GetPlanet(RegisterPlayerResponse registration)
-        => await GetPlanetById(registration, registration.HomeworldId);
-
-    // Finds an uncolonized planet through the public solar-systems listing (the real
-    // player-visible read path, per #51 spec §7 item 4) rather than a raw store query: walks
-    // systems in listing order and returns the first planet whose owner is null. Relies on
-    // the IntegrationCollection's serialized test execution (no concurrent writer between
-    // this scan and the subsequent Launch calls) — must not be copied into a parallel context.
-    private async Task<Guid> UncolonizedPlanetId(RegisterPlayerResponse asWhom)
-    {
-        var systems = await GetJson<PagedResponse<SolarSystemResponse>>(asWhom, "/api/solar-systems?pageSize=200");
-
-        foreach (var system in systems.Items)
-        {
-            foreach (var planetId in system.PlanetIds)
-            {
-                var planet = await GetPlanetById(asWhom, planetId);
-                if (planet.OwnerId is null)
-                {
-                    return planet.Id;
-                }
-            }
-        }
-
-        throw new InvalidOperationException("No uncolonized planet found across the listed solar systems.");
-    }
-
-    private async Task<PlanetResponse> GetPlanetById(RegisterPlayerResponse asWhom, Guid planetId)
-        => await GetJson<PlanetResponse>(asWhom, $"/api/planets/{planetId}");
-
-    private async Task<T> GetJson<T>(RegisterPlayerResponse registration, string url)
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Get.Url(url);
-            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<T>();
-        Assert.NotNull(response);
-        return response;
-    }
-
-    private async Task<RegisterPlayerResponse> RegisterPlayer()
-    {
-        var result = await _host.Scenario(s =>
-        {
-            s.Post.Json(new RegisterPlayerRequest($"ClaimRace_Test_{Guid.NewGuid():N}"))
-                .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
-        });
-
-        var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
-        Assert.NotNull(response);
-        return response;
     }
 }
