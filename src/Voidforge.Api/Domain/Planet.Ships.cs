@@ -78,8 +78,8 @@ public sealed partial class Planet
         return events;
     }
 
-    // Cancel (D3): no refund. If the cancelled build was Active, a slot frees and the next queued
-    // build auto-starts. Unknown build => no-op.
+    // Cancel (D3): no refund. If the cancelled build held a bay, a slot frees and the next queued build
+    // auto-starts. Unknown build => no-op.
     public IReadOnlyList<object> CancelShipBuild(Guid buildId, DateTimeOffset at)
     {
         var build = ShipQueue.FirstOrDefault(b => b.Id == buildId);
@@ -89,10 +89,12 @@ public sealed partial class Planet
         }
 
         var events = new List<object> { new ShipConstructionCancelled(buildId, at) };
-        if (build.Status == ShipBuildStatus.Active)
+        // Both Active AND Halted builds occupy a bay (OccupiedBayCount counts both, #83), so cancelling
+        // EITHER frees a bay and lets a queued build auto-start; -1 credits the just-freed bay. Cancelling
+        // a Halted build previously skipped this, stranding a queued build until an unrelated capacity
+        // event. A Queued build holds no bay, so cancelling it frees nothing (guard stays false).
+        if (build.Status is ShipBuildStatus.Active or ShipBuildStatus.Halted)
         {
-            // The cancelled build is Active, so it is counted in OccupiedBayCount; -1 frees its bay.
-            // A Halted build still holds its bay, so a queued build only starts into free capacity (#83).
             events.AddRange(StartQueuedBuilds(ShipyardCapacity() - (OccupiedBayCount() - 1), at));
         }
 

@@ -300,6 +300,43 @@ public sealed class PlanetShipyardTests
         Assert.Equal(ShipBuildStatus.Queued, planet.ShipQueue.Single(b => b.Id == fourthId).Status);
     }
 
+    // Cancelling a HALTED ship build frees its bay, so a waiting queued build must auto-start (CodeRabbit
+    // #91): a Halted build occupies a bay (OccupiedBayCount), and the old `== Active` cancel guard skipped
+    // StartQueuedBuilds for a halted cancel — stranding the queue until an unrelated capacity event.
+    [Fact]
+    public void CancellingAHaltedBuildAutoStartsNextQueued()
+    {
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var planet = PlanetWithShipyards(now, shipyards: 1);   // capacity 3
+        var ids = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var id = Guid.NewGuid();
+            ids.Add(id);
+            Apply(planet, planet.QueueShip(ShipType.ColonyShip, now.AddSeconds(i), id, _drain, _duration));
+        }
+
+        // Starve → all 3 active builds halt, holding all 3 bays.
+        EmptyIngotBuffer(planet, now);
+        Apply(planet, planet.EvaluateIngotStarvation(now));
+        Assert.Equal(3, planet.ShipQueue.Count(b => b.Status == ShipBuildStatus.Halted));
+
+        // A 4th build queues but cannot start — every bay is held by a halted build.
+        var fourthId = Guid.NewGuid();
+        Apply(planet, planet.QueueShip(ShipType.ColonyShip, now.AddSeconds(3), fourthId, _drain, _duration));
+        Assert.Equal(ShipBuildStatus.Queued, planet.ShipQueue.Single(b => b.Id == fourthId).Status);
+
+        // Cancelling a HALTED build frees a bay → the queued 4th auto-starts into it.
+        var cancelEvents = planet.CancelShipBuild(ids[0], now.AddSeconds(10));
+        Assert.Contains(cancelEvents, e => e is ShipConstructionCancelled);
+        var autoStart = cancelEvents.OfType<ShipConstructionStarted>().Single();
+        Assert.Equal(fourthId, autoStart.BuildId);
+
+        Apply(planet, cancelEvents);
+        Assert.DoesNotContain(planet.ShipQueue, b => b.Id == ids[0]);                                  // cancelled, no refund
+        Assert.Equal(ShipBuildStatus.Active, planet.ShipQueue.Single(b => b.Id == fourthId).Status);   // queued build started
+    }
+
     // #83: resume restores the build to Active, pushes CompletesAt out by exactly the paused span
     // (resumeAt + (originalCompletesAt − haltedAt)), clears HaltedAt, and restores the ingot drain.
     [Fact]
