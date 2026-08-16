@@ -23,19 +23,31 @@ public static class CheckInputStarvedHandler
             return;
         }
 
-        var halts = planet.EvaluateInputStarvation(message.PredictedAt);
-        if (halts.Count > 0)
+        var events = planet.EvaluateInputStarvation(message.PredictedAt);
+
+        // No starvation halt means either a superseded check (ore returned) or a Refinery running at
+        // REDUCED throughput (positive-but-insufficient inflow). In the reduced-throughput case the buffer
+        // emptying still requires a rate rebase so EffectiveOreConsumption clamps to the sustainable inflow
+        // and ingot production stops over-counting (#70). EvaluateOreBufferEmptied returns that single
+        // composition-neutral rebase when the buffer is empty and still draining, [] otherwise.
+        if (events.Count == 0)
         {
-            stream.AppendMany([.. halts]);
+            events = planet.EvaluateOreBufferEmptied(message.PredictedAt);
+        }
+
+        if (events.Count > 0)
+        {
+            stream.AppendMany([.. events]);
         }
 
         await session.SaveChangesAsync();
 
         // Reschedule from the FRESH post-commit aggregate (FetchLatest), same rationale as
-        // CheckPoolDepletedHandler: AppendMany does not re-apply events to stream.Aggregate. A starved
-        // Refinery halting stops its consumption, so the buffer stops draining → IronOre.Rate >= 0 →
-        // PredictBufferEmpty returns null (no reschedule — terminal). A superseded no-op reschedules
-        // the single next predicted empty instant, keeping the chain linear.
+        // CheckPoolDepletedHandler: AppendMany does not re-apply events to stream.Aggregate. Whether the
+        // Refinery halted (starved) or the rates rebased (reduced throughput), consumption now matches the
+        // available ore, so the buffer stops draining → IronOre.Rate >= 0 → PredictBufferEmpty returns null
+        // (no reschedule — terminal). A superseded no-op reschedules the single next predicted empty
+        // instant, keeping the chain linear.
         var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
         if (updated is null)
         {

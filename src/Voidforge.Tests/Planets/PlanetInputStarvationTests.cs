@@ -129,6 +129,55 @@ public sealed class PlanetInputStarvationTests
         Assert.Empty(planet.EvaluateInputStarvation(_base));
     }
 
+    // (c''') Rate rebase when the buffer empties at REDUCED throughput (#70 fix): a Refinery below demand
+    // drains the buffer without starving (inflow > 0 → EvaluateInputStarvation emits no halt). Once the
+    // buffer is empty the ingot PRODUCTION rate must fall from factor*demand to the sustainable
+    // factor*inflow — otherwise ingots are fabricated at 30/s when only 20/s is physically producible.
+    // EvaluateOreBufferEmptied emits a composition-neutral rebase that re-clamps consumption to the inflow.
+    [Fact]
+    public void OreBufferEmptyingRebasesRatesToSustainableInflow()
+    {
+        var planet = CreateColonizedPlanet();
+        // 2 Generators + Drill (inflow 10) + 3 Refineries (demand 15), buffer 500: net ore -5, ingots 2*15=30.
+        Place(planet, _base, BuildingType.Generator, BuildingType.Generator, BuildingType.Drill,
+            BuildingType.Refinery, BuildingType.Refinery, BuildingType.Refinery);
+        Assert.Equal(-5m, planet.IronOre.Rate);
+        Assert.Equal(30m, planet.IronIngot.Rate);   // full demand while the buffer lasts.
+
+        // The buffer empties 100s later (500 / 5). No starvation halt — inflow 10 > 0...
+        var emptyAt = _base.AddSeconds(100);
+        Assert.Equal(0m, planet.IronOre.GetCurrentValue(emptyAt));
+        Assert.Empty(planet.EvaluateInputStarvation(emptyAt));
+
+        // ...but the buffer emptied, so a single composition-neutral rebase re-clamps the rates.
+        var rebase = Assert.IsType<IronOreBufferEmptied>(Assert.Single(planet.EvaluateOreBufferEmptied(emptyAt)));
+        Assert.Equal(emptyAt, rebase.At);
+        planet.Apply(rebase);
+
+        Assert.Equal(0m, planet.IronOre.Rate);       // inflow 10 - sustainable consumption 10.
+        Assert.Equal(20m, planet.IronIngot.Rate);    // 2 * min(demand 15, inflow 10) — no more over-production.
+
+        // Idempotent + terminal: re-running the check emits nothing and PredictBufferEmpty is null (no loop).
+        Assert.Empty(planet.EvaluateOreBufferEmptied(emptyAt));
+        Assert.Null(planet.PredictBufferEmpty(emptyAt));
+    }
+
+    // A non-empty buffer (a superseded/early check) yields no rebase, and neither does an already-clamped
+    // planet — so a replayed or duplicate CheckInputStarved is an idempotent no-op.
+    [Fact]
+    public void EvaluateOreBufferEmptiedEmitsNothingWhenBufferHasOreOrNotDraining()
+    {
+        var draining = CreateColonizedPlanet();
+        Place(draining, _base, BuildingType.Generator, BuildingType.Refinery); // rate -5, buffer 500 > 0.
+        Assert.Empty(draining.EvaluateOreBufferEmptied(_base));                 // buffer not yet empty.
+
+        var notDraining = CreateColonizedPlanet();
+        Place(notDraining, _base, BuildingType.Generator, BuildingType.Drill, BuildingType.Refinery);
+        EmptyOreBuffer(notDraining, _base);
+        Assert.True(notDraining.IronOre.Rate >= 0);
+        Assert.Empty(notDraining.EvaluateOreBufferEmptied(_base));              // empty but not draining.
+    }
+
     // (c'') A Refinery with zero inflow but ore still in the buffer is NOT starved — it is draining it.
     [Fact]
     public void EvaluateInputStarvationEmitsNothingWhileBufferHasOre()

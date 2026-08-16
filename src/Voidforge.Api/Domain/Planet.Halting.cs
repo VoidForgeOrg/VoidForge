@@ -122,6 +122,22 @@ public sealed partial class Planet
         return halts;
     }
 
+    // EvaluateOreBufferEmptied (#70 rate-rebase): a Refinery running at REDUCED throughput drains the
+    // stored buffer without ever starving — 0 < inflow < demand, so EvaluateInputStarvation emits no halt
+    // (inflow > 0) and no composition event fires when the buffer empties. But EffectiveOreConsumption
+    // switches from full demand to min(demand, inflow) exactly when the buffer hits 0, so the rates MUST
+    // be re-derived at that instant: otherwise IronIngot.Rate stays at factor*demand and fabricates ingots
+    // (and IronOre.Rate stays negative though the pool floors at 0). Emits one composition-neutral
+    // IronOreBufferEmptied when the buffer is empty AND still draining (Rate < 0). [] otherwise: a non-empty
+    // buffer means a superseded check (ore returned), and Rate >= 0 means already re-clamped — so a replayed
+    // or duplicate CheckInputStarved is an idempotent no-op that never loops. Scheduled at the predicted
+    // empty instant by PredictBufferEmpty, alongside the starvation halt it complements.
+    public IReadOnlyList<object> EvaluateOreBufferEmptied(DateTimeOffset at)
+    {
+        if (IronOre.GetCurrentValue(at) > 0 || IronOre.Rate >= 0) return [];
+        return [new IronOreBufferEmptied(at)];
+    }
+
     // EvaluateInputStarvationResumes (#70): a Refinery halted InputStarved resumes once ore is
     // genuinely restored — either drill inflow returned (a new/resumed Drill → CurrentOreInflow() > 0)
     // or the stored buffer was refilled (a cargo delivery → IronOre.GetCurrentValue(at) > 0). Depletion
@@ -300,4 +316,10 @@ public sealed partial class Planet
     {
         IronOreDeposit = IronOreDeposit.Checkpoint(@event.At) with { CheckpointValue = 0m };
     }
+
+    // Apply(IronOreBufferEmptied) (#70 rate-rebase): composition-neutral. RebaseRates re-reads the
+    // now-empty IronOre buffer, so EffectiveOreConsumption clamps refinery consumption to the sustainable
+    // inflow — IronOre.Rate → 0 (no longer draining) and IronIngot.Rate → factor*inflow (stops
+    // over-producing). Idempotent: a second apply at the same instant re-derives the identical rates.
+    public void Apply(IronOreBufferEmptied @event) => RebaseRates(@event.At);
 }
