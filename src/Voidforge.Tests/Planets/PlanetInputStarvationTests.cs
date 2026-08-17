@@ -8,6 +8,7 @@ namespace Voidforge.Tests.Planets;
 // buffer when drill inflow is short, and halts InputStarved only when BOTH inflow and buffer are
 // exhausted. Mirrors PlanetDepletionTests' fixed-base-time, direct-Apply style so checkpoint/deadline
 // math is deterministic (no DateTimeOffset.UtcNow).
+[Trait("Category", "Unit")]
 public sealed class PlanetInputStarvationTests
 {
     private static readonly DateTimeOffset _base = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

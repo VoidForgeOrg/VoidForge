@@ -13,6 +13,7 @@ namespace Voidforge.Tests.Concurrency;
 // retry; FetchForWriting everywhere) — this closes the gap. Mirrors the batching idiom in
 // SameStreamConcurrencyTests: fire concurrent requests without an auto-assert and capture the
 // raw competing status codes.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FleetConcurrencyTests
 {

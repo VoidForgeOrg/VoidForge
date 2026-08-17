@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Planets;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetShipyardTests
 {
     // ColonyShip test balance: cost 300, duration 30 => drain 10/s (kept simple for assertions).

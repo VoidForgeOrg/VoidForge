@@ -7,6 +7,7 @@ namespace Voidforge.Tests.Planets;
 // Depletion cascade (#70, Task 2): once the finite ore deposit empties, every operational Drill
 // halts PERMANENTLY (HaltReason.ResourceDepleted). Mirrors PlanetHaltingTests' fixed-base-time,
 // direct-Apply style so checkpoint/deadline math is deterministic (no DateTimeOffset.UtcNow).
+[Trait("Category", "Unit")]
 public sealed class PlanetDepletionTests
 {
     private static readonly DateTimeOffset _base = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

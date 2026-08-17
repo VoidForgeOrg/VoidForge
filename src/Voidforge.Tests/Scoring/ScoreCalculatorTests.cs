@@ -9,6 +9,7 @@ namespace Voidforge.Tests.Scoring;
 // built in-memory. Exact-value assertions are safe here — pools are fixed and evaluated at a fixed
 // `now`, no live accrual. Expected values are reproduced from ScoringSpecs constants (never magic
 // numbers) so a placeholder change can't silently invalidate a test's intent.
+[Trait("Category", "Unit")]
 public sealed class ScoreCalculatorTests
 {
     private static readonly DateTimeOffset _at = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

@@ -15,6 +15,7 @@ namespace Voidforge.Tests.Halting;
 // once the buffer runs dry it halts InputStarved and ingot production stops. Driven deterministically
 // by invoking the two scheduled-check handlers directly at instants computed from the live aggregate's
 // OWN drain math (mirrors StorageHaltingTests) — no wall-clock waits, no fixed sleeps.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class DepletionCascadeTests
 {

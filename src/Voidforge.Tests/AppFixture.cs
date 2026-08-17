@@ -45,6 +45,9 @@ public sealed class AppFixture : IAsyncLifetime
         Environment.SetEnvironmentVariable("Balance__Ships__ColonyShip__SpeedPerSecond", "1000");
         Environment.SetEnvironmentVariable("Balance__Ships__CargoVessel__SpeedPerSecond", "1000");
 
+        // Silence the per-SQL Debug/Info logging that Development-env defaults switch on (see PinTestLogLevels).
+        PinTestLogLevels();
+
         // Safety check: refuse to drop schema on a non-test database.
         var builder = new NpgsqlConnectionStringBuilder(connStr);
         if (builder.Database is not { } db || !db.Contains("test", StringComparison.OrdinalIgnoreCase))
@@ -64,4 +67,17 @@ public sealed class AppFixture : IAsyncLifetime
     }
 
     public Task DisposeAsync() => Host?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+
+    // Alba defaults the host environment to Development, which loads appsettings.Development.json
+    // (Default/Marten/Wolverine: Debug) and makes Marten/Npgsql/Wolverine log every SQL statement —
+    // a full run emits hundreds of MB and buries real failures. Env vars override appsettings
+    // (__ -> :), so pin the noisy categories to Warning (the same env-var path used for the
+    // connection string above, avoiding AlbaHost's WithWebHostBuilder disposal race).
+    private static void PinTestLogLevels()
+    {
+        Environment.SetEnvironmentVariable("Logging__LogLevel__Default", "Information");
+        Environment.SetEnvironmentVariable("Logging__LogLevel__Marten", "Warning");
+        Environment.SetEnvironmentVariable("Logging__LogLevel__Wolverine", "Warning");
+        Environment.SetEnvironmentVariable("Logging__LogLevel__Npgsql", "Warning");
+    }
 }

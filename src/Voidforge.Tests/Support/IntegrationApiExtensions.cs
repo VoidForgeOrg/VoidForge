@@ -1,4 +1,5 @@
 using Alba;
+using JasperFx;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Voidforge.Api.Auth;
@@ -330,6 +331,13 @@ public static class IntegrationApiExtensions
         return fleet;
     }
 
+    // Bounded ConcurrencyException retry for handler-invoked arrivals. A direct
+    // CompleteFleetArrivalHandler.Handle call bypasses Wolverine, so the #39 durable-message retry
+    // ladder (Program.cs) never sees a collision with the real scheduler's delivery of the same
+    // CompleteFleetArrival — this stands in for it. See CompleteArrivalWithRetry.
+    private const int _arrivalMaxAttempts = 5;
+    private const int _arrivalRetryDelayMs = 100;
+
     /// <summary>
     /// Launches the mission, then completes the arrival immediately by invoking the
     /// handler directly with the scheduled ArrivesAt — no wall-clock wait.
@@ -344,12 +352,38 @@ public static class IntegrationApiExtensions
         var launched = await host.Launch(registration, fleetId, mission, destinationPlanetId);
         Assert.NotNull(launched.ArrivesAt);
 
-        var store = host.Services.GetRequiredService<IDocumentStore>();
-        await using var session = store.LightweightSession();
-        await CompleteFleetArrivalHandler.Handle(
-            new CompleteFleetArrival(fleetId, launched.ArrivesAt.Value), session);
+        await host.CompleteArrivalWithRetry(fleetId, launched.ArrivesAt.Value);
 
         return await host.GetJson<FleetResponse>(registration, $"/api/fleets/{fleetId}");
+    }
+
+    /// <summary>
+    /// Invokes CompleteFleetArrivalHandler directly, tolerant of a concurrent durable-scheduler
+    /// delivery of the same CompleteFleetArrival. AppFixture boots the real Wolverine Solo scheduler
+    /// with fast ship speeds, so a scheduled arrival can land on the same Fleet stream at the same
+    /// instant as this manual call; the loser's SaveChangesAsync throws
+    /// EventStreamUnexpectedMaxEventIdException (a ConcurrencyException). A direct call never reaches
+    /// the #39 retry ladder, so retry here with a fresh session per attempt — on retry the fleet is
+    /// already Stationed, so Fleet.Arrive no-ops and the call converges.
+    /// </summary>
+    public static async Task CompleteArrivalWithRetry(
+        this IAlbaHost host, Guid fleetId, DateTimeOffset arrivesAt)
+    {
+        var store = host.Services.GetRequiredService<IDocumentStore>();
+        for (var attempt = 1; attempt <= _arrivalMaxAttempts; attempt++)
+        {
+            await using var session = store.LightweightSession();
+            try
+            {
+                await CompleteFleetArrivalHandler.Handle(
+                    new CompleteFleetArrival(fleetId, arrivesAt), session);
+                return;
+            }
+            catch (ConcurrencyException) when (attempt < _arrivalMaxAttempts)
+            {
+                await Task.Delay(_arrivalRetryDelayMs);
+            }
+        }
     }
 
     /// <summary>POSTs and returns the raw status code — for race tests that expect non-200s.</summary>

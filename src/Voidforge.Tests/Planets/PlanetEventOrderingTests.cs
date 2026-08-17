@@ -8,6 +8,7 @@ namespace Voidforge.Tests.Planets;
 // A completion scheduled for T can be delivered after a player command already committed at
 // W > T (poll lag per ADR 0001 plus the #39 retry backoff), so RebaseRates runs with a backwards
 // timestamp. These tests pin the invariant that such an inversion is inert rather than corrupting.
+[Trait("Category", "Unit")]
 public sealed class PlanetEventOrderingTests
 {
     private static Planet Homeworld(DateTimeOffset at)

@@ -14,6 +14,7 @@ namespace Voidforge.Tests.Colonize;
 // guarded arrival claim (planet owned by the fleet owner, colony ship consumed, cargo
 // delivered) vs. the lost-the-race/already-owned branch (fleet idles Stationed, nothing
 // aboard changes).
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class ColonizeMissionTests
 {
@@ -121,10 +122,7 @@ public sealed class ColonizeMissionTests
         var arrivesAt = launched.ArrivesAt.Value;
 
         var store = _host.Services.GetRequiredService<IDocumentStore>();
-        await using (var firstSession = store.LightweightSession())
-        {
-            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), firstSession);
-        }
+        await _host.CompleteArrivalWithRetry(fleet.Id, arrivesAt);
 
         var afterFirst = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.DoesNotContain(afterFirst.Ships, s => s.Id == colonyShipId);

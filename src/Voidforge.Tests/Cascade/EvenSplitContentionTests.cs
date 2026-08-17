@@ -16,6 +16,7 @@ namespace Voidforge.Tests.Cascade;
 // composition asserts them fully and an integration arrangement would be disproportionate (the plan
 // flags even-split 7 as unit-friendly; the commit path for the ingot-consumer halts is already covered
 // by Halting/IngotStarvationCascadeTests, so proving it again here would be redundant).
+[Trait("Category", "Unit")]
 public sealed class EvenSplitContentionTests
 {
     // Fixed base time so checkpoint/deadline math is deterministic (no DateTimeOffset.UtcNow).

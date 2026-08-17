@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Balance;
 
+[Trait("Category", "Unit")]
 public sealed class BalanceOptionsTests
 {
     [Fact]

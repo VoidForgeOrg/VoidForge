@@ -11,6 +11,7 @@ namespace Voidforge.Tests.Concurrency;
 // Marten optimistic concurrency + a Wolverine retry policy. Two collision surfaces are exercised:
 //   - HTTP-vs-scheduled (case 2): player commands overlapping a scheduled completion.
 //   - HTTP-vs-HTTP: concurrent player commands on the same planet.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class SameStreamConcurrencyTests
 {

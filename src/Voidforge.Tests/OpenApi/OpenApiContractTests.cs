@@ -11,6 +11,7 @@ namespace Voidforge.Tests.OpenApi;
 /// the emitted contract fails the build instead of silently drifting (as the committed
 /// frontend snapshot did — it was 14 operations behind before this test existed).
 /// </summary>
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class OpenApiContractTests
 {

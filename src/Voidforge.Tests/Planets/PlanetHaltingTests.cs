@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Planets;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetHaltingTests
 {
     // Fixed base time so checkpoint/deadline math is deterministic (no DateTimeOffset.UtcNow).

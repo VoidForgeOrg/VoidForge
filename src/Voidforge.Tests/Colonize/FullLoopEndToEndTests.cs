@@ -20,6 +20,7 @@ namespace Voidforge.Tests.Colonize;
 // colony -- an OWNED destination now, so this is the first true real-scheduler Transport e2e in
 // the suite; TransportMissionEndToEndTests's Move round trip predates #51 and could only reach a
 // FOREIGN planet) -> real scheduled arrival -> delivered, colony stores incremented exactly.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FullLoopEndToEndTests
 {
@@ -226,9 +227,10 @@ public sealed class FullLoopEndToEndTests
     // Determinism note (mirrors StorageHaltingTests / FleetRecallTests / ColonizeMissionTests): a
     // 5 net-ore/s Drill would take ~1900s to fill the 10000-cap ore pool by wall clock, so the
     // halt leg is driven by seeding the pool to capacity and invoking CheckStorageFullHandler
-    // DIRECTLY at that instant; the recall-return and colonize arrivals are driven by direct
-    // handler invocation (LaunchAndArriveInstantly / CompleteFleetArrivalHandler) rather than
-    // real-scheduler wall-clock waits. Everything else — register, place/cancel building, assemble,
+    // DIRECTLY at that instant; the recall-return and colonize arrivals are driven by the shared
+    // retry helpers (LaunchAndArriveInstantly / CompleteArrivalWithRetry), which invoke
+    // CompleteFleetArrivalHandler with a bounded ConcurrencyException retry so they survive the
+    // durable scheduler racing the same arrival, rather than real-scheduler wall-clock waits. Everything else — register, place/cancel building, assemble,
     // launch, recall, and all reads — runs through the real HTTP API. The existing full-loop test
     // above already covers the real-scheduler Colonize + Transport arrivals, so this capstone does
     // not duplicate that and uses the fast, deterministic handler-invocation path instead.
@@ -331,8 +333,9 @@ public sealed class FullLoopEndToEndTests
 
     // Recall (#73/D10): send the supply fleet outbound on a Move, then recall it — it turns around
     // and heads back to its origin. Launch + recall run through the real HTTP API; the return
-    // arrival is driven by invoking CompleteFleetArrivalHandler at the recall's fresh ArrivesAt
-    // (mirrors FleetRecallTests), idempotent if the durable scheduler already landed it.
+    // arrival is driven by the shared CompleteArrivalWithRetry helper at the recall's fresh ArrivesAt
+    // (mirrors FleetRecallTests) — it invokes CompleteFleetArrivalHandler with a bounded
+    // ConcurrencyException retry, staying correct if the durable scheduler races it on the stream.
     private async Task RecallTheSupplyFleet(RegisterPlayerResponse settler, Guid fleetId)
     {
         var destination = await _host.FindPlanetOtherThan(settler);
@@ -344,10 +347,7 @@ public sealed class FullLoopEndToEndTests
         Assert.NotNull(recalled.RecalledAt);
         Assert.NotNull(recalled.ArrivesAt);
 
-        var store = _host.Services.GetRequiredService<IDocumentStore>();
-        await using var session = store.LightweightSession();
-        await CompleteFleetArrivalHandler.Handle(
-            new CompleteFleetArrival(fleetId, recalled.ArrivesAt.Value), session);
+        await _host.CompleteArrivalWithRetry(fleetId, recalled.ArrivesAt.Value);
     }
 
     // Colonize (#51): assemble the ColonyShip and claim an uncolonized planet in ANOTHER system.

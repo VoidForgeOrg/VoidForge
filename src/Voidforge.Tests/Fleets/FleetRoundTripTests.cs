@@ -7,6 +7,7 @@ namespace Voidforge.Tests.Fleets;
 
 // Merge-gate e2e test: exercises the full fleet-assembly feature end to end against real
 // scheduled ship completions (build -> assemble -> roster shrinks -> disband -> ships returned).
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FleetRoundTripTests
 {

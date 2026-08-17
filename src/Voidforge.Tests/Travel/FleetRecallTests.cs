@@ -15,6 +15,7 @@ namespace Voidforge.Tests.Travel;
 // colony ship intact. The recall RESPONSE assertions read the endpoint's own post-commit
 // snapshot (deterministic). Arrival is driven by invoking CompleteFleetArrivalHandler directly
 // (mirrors LaunchAndArriveInstantly) rather than waiting on the durable scheduler.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FleetRecallTests
 {
@@ -49,12 +50,9 @@ public sealed class FleetRecallTests
         var returnArrivesAt = recalled.ArrivesAt.Value;
 
         // Complete the return arrival at the fresh (return) ArrivesAt — idempotent if the durable
-        // scheduler already fired it (Arrive() no-ops once the fleet is no longer InTransit).
-        var store = _host.Services.GetRequiredService<IDocumentStore>();
-        await using (var session = store.LightweightSession())
-        {
-            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, returnArrivesAt), session);
-        }
+        // scheduler already fired it (Arrive() no-ops once the fleet is no longer InTransit), and
+        // tolerant of racing that scheduler's delivery on the same Fleet stream.
+        await _host.CompleteArrivalWithRetry(fleet.Id, returnArrivesAt);
 
         var arrived = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(FleetStatus.Stationed, arrived.Status);
@@ -86,11 +84,9 @@ public sealed class FleetRecallTests
 
         var store = _host.Services.GetRequiredService<IDocumentStore>();
 
-        // Complete the return first so the fleet is home and settled.
-        await using (var session = store.LightweightSession())
-        {
-            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, returnArrivesAt), session);
-        }
+        // Complete the return first so the fleet is home and settled (tolerant of the durable
+        // scheduler racing this delivery on the same Fleet stream).
+        await _host.CompleteArrivalWithRetry(fleet.Id, returnArrivesAt);
 
         var afterReturn = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(FleetStatus.Stationed, afterReturn.Status);

@@ -13,6 +13,7 @@ namespace Voidforge.Tests.Halting;
 // Storage-full halting (#69). These drive CheckStorageFullHandler.Handle DIRECTLY at a chosen
 // predicted instant (mirrors IntegrationApiExtensions.LaunchAndArriveInstantly) rather than
 // waiting ~1900s for the homeworld Drill's +5/s to fill the 10000-cap ore pool by wall clock.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class StorageHaltingTests
 {

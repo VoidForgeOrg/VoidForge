@@ -37,7 +37,7 @@ This avoids booting the app per test class (Marten schema migration is slow).
 
 Since #62, API-driving helpers are shared extension methods on `IAlbaHost` — do not re-declare them privately in test classes. Add missing helpers to the shared layer instead.
 
-- `Support/IntegrationApiExtensions.cs` — register/get/build/assemble/launch/poll helpers. All assert success (200) unless the name says otherwise (`PostForStatus`); polling helpers return the last-seen state on timeout so the caller's assertion reports the failure.
+- `Support/IntegrationApiExtensions.cs` — register/get/build/assemble/launch/poll helpers. All assert success (200) unless the name says otherwise (`PostForStatus`); polling helpers return the last-seen state on timeout so the caller's assertion reports the failure. `CompleteArrivalWithRetry` / `LaunchAndArriveInstantly` invoke `CompleteFleetArrivalHandler` directly with a bounded `ConcurrencyException` retry — always drive handler-invoked arrivals through these, never a bare `Handle(...)` call, because a direct call races the real durable scheduler on the same Fleet stream and bypasses Program.cs's #39 retry ladder.
 - `Support/TestTimeouts.cs` — the suite's named poll cadence and deadlines (`PollInterval`, `Completion`, `StockRecovery`, `QueueDrain`, `Arrival`, `FullLoopArrival`). Use these instead of inline `TimeSpan` literals; they time out real HTTP polling and are unrelated to the app's injected `TimeProvider`.
 
 Usage shape (the class keeps its `[Collection]` + `AppFixture` wiring):
@@ -48,7 +48,20 @@ var shipId = await _host.BuildRosterShip(owner);
 var planet = await _host.PollUntil(owner, p => p.Buildings.Count > 0, TestTimeouts.Completion);
 ```
 
-Deliberately local (not shared): race-specific arrival retries (`ClaimRaceTests`), raw-Marten world mutations (`ColonizeSecondPlanetForOwner`, `UncolonizedPlanetId`), and `PlayerRegistrationTests`' inline scenarios that assert raw registration responses.
+Deliberately local (not shared): raw-Marten world mutations (`ColonizeSecondPlanetForOwner`, `UncolonizedPlanetId`), the deterministic forced-collision in `ClaimRaceTests.ContestedPlanetAppendLoses...`, and `PlayerRegistrationTests`' inline scenarios that assert raw registration responses.
+
+## Test Lanes (`Category` traits)
+
+Every test class carries exactly one xUnit trait: `[Trait("Category", "Unit")]` (pure-domain, no host/DB) or `[Trait("Category", "Integration")]` (needs the Alba host + Postgres, alongside `[Collection(IntegrationCollection.Name)]`).
+
+- **Fast lane (no DB):** `dotnet test src/Voidforge.slnx --filter Category=Unit` — runs in seconds. This is what the local Stop-hook (`.claude/hooks/quality-gate.sh`) and the CI `unit` job run, so neither needs Postgres.
+- **Full lane + coverage:** the CI `test` job runs the whole suite unfiltered with `--collect:"XPlat Code Coverage"`; the 70% line gate (`src/coverlet.runsettings`) is enforced only on this complete run.
+
+New test classes MUST be tagged — an untagged class silently runs in neither filtered lane.
+
+## Log Level Under Test
+
+`AppFixture` pins `Logging__LogLevel__{Marten,Wolverine,Npgsql}=Warning` (and `Default=Information`) via env vars before booting the host. Alba defaults the environment to `Development` (loading `appsettings.Development.json`'s Debug levels), which otherwise makes Marten/Npgsql/Wolverine log every SQL statement — hundreds of MB per run that bury real failures. Do not remove these overrides; they follow the same env-var path as the connection string (never the `WithWebHostBuilder` overload).
 
 ## Cascade Scenario Coverage (#71)
 
@@ -102,4 +115,4 @@ Enforced via `src/coverlet.runsettings`:
 - Threshold: 70% line coverage
 - Excludes: `[Voidforge.Tests]*`
 - Format: cobertura
-- Applied in quality gate and CI
+- Enforced only by the CI `test` job (the full unfiltered run); the local quality gate and CI `unit` job run the DB-free `Category=Unit` lane and do not collect coverage

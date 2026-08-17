@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Planets;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetDemolitionTests
 {
     private static Planet Homeworld(DateTimeOffset at)

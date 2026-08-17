@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Planets;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class PlanetEndpointTests
 {

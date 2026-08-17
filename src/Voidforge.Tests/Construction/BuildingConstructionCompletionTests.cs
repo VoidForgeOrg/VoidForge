@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Construction;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class BuildingConstructionCompletionTests
 {

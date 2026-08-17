@@ -13,6 +13,7 @@ namespace Voidforge.Tests.Travel;
 // a cross-system trip (world seeded with CoordinateRange 1000 → at most ~3500 units) resolves
 // in a few seconds of simulated travel time; the poll timeout below is generous mostly to
 // absorb Wolverine's scheduled-message poller latency, not the travel itself.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class MoveMissionEndToEndTests
 {

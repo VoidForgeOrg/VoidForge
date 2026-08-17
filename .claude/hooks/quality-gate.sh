@@ -65,8 +65,10 @@ run_check "dotnet-restore" dotnet restore "$SOLUTION" --verbosity quiet
 # [check:dotnet-build]
 run_check "dotnet-build" dotnet build "$SOLUTION" --no-restore --verbosity quiet -warnaserror
 
-# [check:dotnet-test] — runs tests and enforces 70% line coverage threshold via src/coverlet.runsettings
-run_check "dotnet-test" dotnet test "$SOLUTION" --no-build --no-restore --collect:"XPlat Code Coverage" --settings "src/coverlet.runsettings" --verbosity quiet
+# [check:dotnet-test] — fast unit lane only (Category=Unit, no database). The full integration
+# suite + 70% coverage gate (src/coverlet.runsettings) runs in CI; keeping the Stop-hook DB-free
+# makes it fast and stops it mass-failing when local Postgres is down.
+run_check "dotnet-test" dotnet test "$SOLUTION" --no-build --no-restore --filter "Category=Unit" --verbosity quiet
 
 # [check:dotnet-format]
 run_check "dotnet-format" dotnet format "$SOLUTION" --verify-no-changes --verbosity quiet

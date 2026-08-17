@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Pagination;
 
+[Trait("Category", "Unit")]
 public sealed class PaginationContractTests
 {
     [Fact]
