@@ -115,4 +115,4 @@ Enforced via `src/coverlet.runsettings`:
 - Threshold: 70% line coverage
 - Excludes: `[Voidforge.Tests]*`
 - Format: cobertura
-- Applied in quality gate and CI
+- Enforced only by the CI `test` job (the full unfiltered run); the local quality gate and CI `unit` job run the DB-free `Category=Unit` lane and do not collect coverage

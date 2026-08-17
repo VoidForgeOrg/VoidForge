@@ -10,12 +10,19 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
+# Least privilege: every job only reads the repo and runs build/test — none push,
+# comment, or release. Restrict the default GITHUB_TOKEN to read-only contents.
+permissions:
+  contents: read
+
 jobs:
   # Dimension 2: Linting & Formatting
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -27,6 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -38,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -52,6 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
@@ -79,6 +92,8 @@ jobs:
       ConnectionStrings__Marten: Host=localhost;Port=5432;Database=voidforge_test;Username=postgres;Password=postgres
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
