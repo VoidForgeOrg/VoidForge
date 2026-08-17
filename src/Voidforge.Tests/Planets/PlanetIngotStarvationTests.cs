@@ -9,6 +9,7 @@ namespace Voidforge.Tests.Planets;
 // resumes to UnderConstruction with a completion time pushed out by exactly the paused duration.
 // Mirrors PlanetInputStarvationTests' fixed-base-time, direct-Apply style so checkpoint/deadline math
 // is deterministic (no DateTimeOffset.UtcNow).
+[Trait("Category", "Unit")]
 public sealed class PlanetIngotStarvationTests
 {
     private static readonly DateTimeOffset _base = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

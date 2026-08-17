@@ -11,6 +11,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Buildings;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class BuildingEndpointTests
 {

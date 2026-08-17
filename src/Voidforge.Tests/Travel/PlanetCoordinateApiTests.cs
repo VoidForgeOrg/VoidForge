@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Travel;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class PlanetCoordinateApiTests
 {

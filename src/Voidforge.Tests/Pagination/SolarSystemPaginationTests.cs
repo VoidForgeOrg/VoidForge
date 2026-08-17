@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Pagination;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class SolarSystemPaginationTests
 {

@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Energy;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class EnergyGridTests
 {

@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Fleets;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetRosterMutationTests
 {
     private static readonly DateTimeOffset _t0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

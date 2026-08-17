@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Colonize;
 
+[Trait("Category", "Unit")]
 public sealed class ColonizeDomainTests
 {
     private static readonly DateTimeOffset _t0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

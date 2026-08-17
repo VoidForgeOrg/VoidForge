@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Travel;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FleetMissionEndpointTests
 {
@@ -193,10 +194,7 @@ public sealed class FleetMissionEndpointTests
         // session it hands out.
         var store = _host.Services.GetRequiredService<IDocumentStore>();
 
-        await using (var session = store.LightweightSession())
-        {
-            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), session);
-        }
+        await _host.CompleteArrivalWithRetry(fleet.Id, arrivesAt);
 
         var arrived = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(FleetStatus.Stationed, arrived.Status);

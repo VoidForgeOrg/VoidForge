@@ -47,7 +47,18 @@ jobs:
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -qi "has the following vulnerable packages" && exit 1 || exit 0
 
-  # Dimension 1: Testing & Coverage
+  # Dimension 1a: Fast unit lane — pure-domain tests, no database, runs in seconds
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore src/Voidforge.slnx
+      - run: dotnet test src/Voidforge.slnx --no-restore --filter Category=Unit --verbosity quiet
+
+  # Dimension 1b: Full test suite + coverage (unfiltered; enforces the 70% gate)
   test:
     runs-on: ubuntu-latest
     services:

@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Voidforge.Tests;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class HealthCheckTests
 {

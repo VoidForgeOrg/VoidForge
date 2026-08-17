@@ -3,6 +3,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Domain;
 
+[Trait("Category", "Unit")]
 public sealed class BuildingSpecsTests
 {
     [Fact]

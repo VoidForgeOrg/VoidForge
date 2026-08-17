@@ -11,6 +11,7 @@ namespace Voidforge.Tests.Cargo;
 // Amounts are chosen well under the homeworld's starting stock (500 ore / 100 ingots,
 // see WorldGenOptions) for happy paths, and comfortably below a fleet's cargo capacity but
 // above any realistic accrual for the "insufficient stored" 409.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class CargoEndpointTests
 {

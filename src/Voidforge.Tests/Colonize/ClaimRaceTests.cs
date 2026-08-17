@@ -22,6 +22,7 @@ namespace Voidforge.Tests.Colonize;
 // same homeworld twice. ContestedPlanetAppendLosesWithConcurrencyExceptionDeterministically
 // below (#52) strengthens the five-concurrent-registrations coverage with a deterministic,
 // non-probabilistic proof of the same version guard.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class ClaimRaceTests
 {
@@ -30,13 +31,6 @@ public sealed class ClaimRaceTests
     // assertions meaningful.
     private const decimal _raceCargoIronOre = 100m;
     private const decimal _raceCargoIronIngot = 50m;
-
-    // Bounded retry for the handler-invoked arrival race. In-test invocation calls
-    // CompleteFleetArrivalHandler.Handle directly, bypassing Wolverine entirely — a genuine
-    // tie's ConcurrencyException on SaveChangesAsync never reaches the #39 durable-message
-    // retry policy configured in Program.cs, so this loop stands in for it.
-    private const int _maxArrivalRetryAttempts = 5;
-    private const int _arrivalRetryDelayMs = 100;
 
     private readonly IAlbaHost _host;
 
@@ -129,10 +123,9 @@ public sealed class ClaimRaceTests
         // Fire both handler-invoked arrivals CONCURRENTLY, one fresh LightweightSession per
         // call (spec §7 testing strategy item 2) — this is what actually exercises the D10
         // guard's tie-breaking rather than two sequential, non-racing claims.
-        var store = _host.Services.GetRequiredService<IDocumentStore>();
         await Task.WhenAll(
-            ArriveWithRetry(store, alphaFleet.Id, alphaArrivesAt),
-            ArriveWithRetry(store, betaFleet.Id, betaArrivesAt));
+            _host.CompleteArrivalWithRetry(alphaFleet.Id, alphaArrivesAt),
+            _host.CompleteArrivalWithRetry(betaFleet.Id, betaArrivesAt));
 
         var destination = await _host.GetPlanetById(alpha, destinationId);
         Assert.True(
@@ -177,27 +170,6 @@ public sealed class ClaimRaceTests
         Assert.Equal(_raceCargoIronIngot, destination.IronIngot.CurrentValue);
         Assert.Equal(_raceCargoIronOre * 2, destination.IronOre.CurrentValue + winnerFleet.CargoIronOre + loserFleet.CargoIronOre);
         Assert.Equal(_raceCargoIronIngot * 2, destination.IronIngot.CurrentValue + winnerFleet.CargoIronIngot + loserFleet.CargoIronIngot);
-    }
-
-    // Handler-invoked arrival with a bounded ConcurrencyException retry (see the class-level
-    // comment on _maxArrivalRetryAttempts): a fresh LightweightSession per attempt, matching
-    // production's FetchForWriting-per-attempt shape — nothing from a losing attempt's pending
-    // unit of work can carry over to the next.
-    private static async Task ArriveWithRetry(IDocumentStore store, Guid fleetId, DateTimeOffset arrivesAt)
-    {
-        for (var attempt = 1; attempt <= _maxArrivalRetryAttempts; attempt++)
-        {
-            await using var session = store.LightweightSession();
-            try
-            {
-                await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleetId, arrivesAt), session);
-                return;
-            }
-            catch (ConcurrencyException) when (attempt < _maxArrivalRetryAttempts)
-            {
-                await Task.Delay(_arrivalRetryDelayMs);
-            }
-        }
     }
 
     // Builds an operational shipyard, queues one Colony Ship + one Cargo Vessel, waits for

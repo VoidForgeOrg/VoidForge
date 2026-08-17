@@ -20,6 +20,7 @@ namespace Voidforge.Tests.Cargo;
 // the cross-aggregate append) is proven handler-invoked in TransportMissionEndpointTests;
 // #51's plan should add the true real-scheduler Transport-to-own-planet round trip once a
 // second owned planet is reachable via the API.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class TransportMissionEndToEndTests
 {

@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Planets;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetAggregateTests
 {
     [Fact]

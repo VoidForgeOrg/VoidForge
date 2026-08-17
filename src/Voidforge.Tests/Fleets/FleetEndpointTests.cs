@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Fleets;
 
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FleetEndpointTests
 {

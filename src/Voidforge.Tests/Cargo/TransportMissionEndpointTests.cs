@@ -12,6 +12,7 @@ namespace Voidforge.Tests.Cargo;
 
 // #50 (spec §2.4): Transport mission launch guards + the codebase's first
 // cross-aggregate arrival append (Planet storage credited, Fleet cargo zeroed, one commit).
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class TransportMissionEndpointTests
 {
@@ -91,10 +92,7 @@ public sealed class TransportMissionEndpointTests
         var arrivesAt = launched.ArrivesAt.Value;
 
         var store = _host.Services.GetRequiredService<IDocumentStore>();
-        await using (var firstSession = store.LightweightSession())
-        {
-            await CompleteFleetArrivalHandler.Handle(new CompleteFleetArrival(fleet.Id, arrivesAt), firstSession);
-        }
+        await _host.CompleteArrivalWithRetry(fleet.Id, arrivesAt);
 
         var afterFirst = await _host.GetJson<FleetResponse>(owner, $"/api/fleets/{fleet.Id}");
         Assert.Equal(0m, afterFirst.CargoIronOre);

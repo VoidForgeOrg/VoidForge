@@ -17,6 +17,7 @@ namespace Voidforge.Tests.Cascade;
 // idempotent (no-double-apply) state, and (6) a fully halted planet's derived energy/rates/queries are
 // stable and throw-free. Composing the aggregate in-memory expresses both directly and avoids adding
 // runtime-marginal integration tests.
+[Trait("Category", "Unit")]
 public sealed class CascadeEdgeCaseTests
 {
     // Fixed base time so checkpoint/deadline math is deterministic (no DateTimeOffset.UtcNow).

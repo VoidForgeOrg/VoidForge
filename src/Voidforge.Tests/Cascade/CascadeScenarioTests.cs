@@ -27,6 +27,7 @@ namespace Voidforge.Tests.Cascade;
 // / PlanetDemolitionTests) already exist SPLIT. These tests fill the surveyed integration gaps —
 // full-chain-on-an-overloaded-planet (1), the completion-drives-overload path (3), the demolish-endpoint
 // path (4) — and stitch the split ore→ingot chain into one unbroken flow (2).
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class CascadeScenarioTests
 {

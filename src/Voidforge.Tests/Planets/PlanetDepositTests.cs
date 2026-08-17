@@ -6,6 +6,7 @@ namespace Voidforge.Tests.Planets;
 
 // The finite ore deposit (#70) drains as drills extract, modeled as a ResourcePool so it inherits
 // the #44 floored-elapsed/non-regressing invariant. Task 1 only drains it — no depletion halting.
+[Trait("Category", "Unit")]
 public sealed class PlanetDepositTests
 {
     // Fixed base time so drain math is deterministic (no DateTimeOffset.UtcNow).

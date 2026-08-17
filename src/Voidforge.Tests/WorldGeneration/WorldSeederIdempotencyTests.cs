@@ -14,6 +14,7 @@ namespace Voidforge.Tests.WorldGeneration;
 // single-row WorldSeedMarker (fixed primary key) in the SAME transaction as the world data, so the
 // loser collides on the primary key (23505) and its whole batch rolls back atomically. These tests
 // pin both halves of the guard against the shared, already-seeded fixture host.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class WorldSeederIdempotencyTests
 {

@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Voidforge.Tests.Travel;
 
+[Trait("Category", "Unit")]
 public sealed class PlanetCoordinateTests
 {
     [Fact]

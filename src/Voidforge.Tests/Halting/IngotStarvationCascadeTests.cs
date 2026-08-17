@@ -16,6 +16,7 @@ namespace Voidforge.Tests.Halting;
 // paused by CheckIngotStarvedHandler. Driven deterministically by seeding the starved state onto the
 // homeworld stream (BuildingHalted refinery + oversized CargoLoadedFromStorage pins the buffer to 0,
 // mirroring StorageHaltingTests) and invoking the handler DIRECTLY at the seed instant — no wall-clock waits.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class IngotStarvationCascadeTests
 {

@@ -74,6 +74,7 @@ frontend/
 - `AppFixture` boots the app via `AlbaHost.For<Program>()` with env var for DB connection
 - Test DB: `voidforge_test` on localhost PostgreSQL
 - Each test class receives the fixture via constructor injection
+- Every test class is tagged `[Trait("Category", "Unit")]` or `[Trait("Category", "Integration")]`; the fast DB-free lane is `dotnet test src/Voidforge.slnx --filter Category=Unit` (CI `unit` job + Stop-hook), the full suite + 70% coverage runs unfiltered (CI `test` job)
 - Test names describe behavior: `RegisterReturnsPlayerIdAndApiKey`, `MeWithoutAuthReturns401`
 
 ## Frontend Commands

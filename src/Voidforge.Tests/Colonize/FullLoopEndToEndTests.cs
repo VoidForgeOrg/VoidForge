@@ -20,6 +20,7 @@ namespace Voidforge.Tests.Colonize;
 // colony -- an OWNED destination now, so this is the first true real-scheduler Transport e2e in
 // the suite; TransportMissionEndToEndTests's Move round trip predates #51 and could only reach a
 // FOREIGN planet) -> real scheduled arrival -> delivered, colony stores incremented exactly.
+[Trait("Category", "Integration")]
 [Collection(IntegrationCollection.Name)]
 public sealed class FullLoopEndToEndTests
 {
@@ -344,10 +345,7 @@ public sealed class FullLoopEndToEndTests
         Assert.NotNull(recalled.RecalledAt);
         Assert.NotNull(recalled.ArrivesAt);
 
-        var store = _host.Services.GetRequiredService<IDocumentStore>();
-        await using var session = store.LightweightSession();
-        await CompleteFleetArrivalHandler.Handle(
-            new CompleteFleetArrival(fleetId, recalled.ArrivesAt.Value), session);
+        await _host.CompleteArrivalWithRetry(fleetId, recalled.ArrivesAt.Value);
     }
 
     // Colonize (#51): assemble the ColonyShip and claim an uncolonized planet in ANOTHER system.
