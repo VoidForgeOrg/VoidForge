@@ -114,8 +114,18 @@ builder.Services.AddSwaggerGen(opts =>
     });
 });
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
-builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
-builder.Services.Configure<EconomyRates>(builder.Configuration.GetSection("Economy"));
+// Balance and Economy are validated at startup (ValidateOnStart): their configurable leaves feed
+// scheduling deadlines and the process-global BuildingSpecs rate table (a divisor, draw fractions,
+// non-negative rates), so an invalid section must abort the host before it serves traffic rather than
+// surface as a runtime divide-by-zero or a past-dated completion.
+builder.Services.AddOptions<BalanceOptions>()
+    .Bind(builder.Configuration.GetSection("Balance"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<BalanceOptions>, BalanceOptionsValidator>();
+builder.Services.AddOptions<EconomyRates>()
+    .Bind(builder.Configuration.GetSection("Economy"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<EconomyRates>, EconomyRatesValidator>();
 builder.Services.Configure<ScoringOptions>(builder.Configuration.GetSection("Scoring"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
