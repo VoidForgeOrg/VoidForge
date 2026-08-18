@@ -18,14 +18,54 @@ namespace Voidforge.Tests.Support;
 /// </summary>
 public static class IntegrationApiExtensions
 {
-    public static async Task<RegisterPlayerResponse> RegisterPlayer(this IAlbaHost host, string namePrefix)
+    /// <summary>
+    /// Runs a scenario WITHOUT asserting status, then enforces the universal "no 5xx" guarantee:
+    /// a 5xx (except the modeled 503) throws <see cref="ServerErrorException"/> — a caller must
+    /// never receive a 500. Returns the raw result so the caller can assert the expected status
+    /// (via <see cref="EnsureExpected"/>) and read the body. This is the single choke point every
+    /// asserting helper flows through.
+    /// </summary>
+    public static async Task<IScenarioResult> Send(this IAlbaHost host, Action<Scenario> configure)
     {
         var result = await host.Scenario(s =>
         {
+            configure(s);
+            s.IgnoreStatusCode();
+        });
+
+        var status = result.Context.Response.StatusCode;
+        if (status is >= 500 and not 503)
+        {
+            var body = await result.ReadAsTextAsync();
+            throw new ServerErrorException(
+                status, result.Context.Request.Method, result.Context.Request.Path.ToString(), body);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Enforces an expected status for the modeled path (5xx is already handled by <see cref="Send"/>).
+    /// A mismatch throws <see cref="UnexpectedStatusException"/>, which contention-tolerant callers MAY catch.
+    /// </summary>
+    public static void EnsureExpected(this IScenarioResult result, int expected)
+    {
+        var status = result.Context.Response.StatusCode;
+        if (status != expected)
+        {
+            throw new UnexpectedStatusException(
+                expected, status, result.Context.Request.Method, result.Context.Request.Path.ToString());
+        }
+    }
+
+    public static async Task<RegisterPlayerResponse> RegisterPlayer(this IAlbaHost host, string namePrefix)
+    {
+        var result = await host.Send(s =>
+        {
             s.Post.Json(new RegisterPlayerRequest($"{namePrefix}{Guid.NewGuid():N}"))
                 .ToUrl("/api/players/register");
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var response = await result.ReadAsJsonAsync<RegisterPlayerResponse>();
         Assert.NotNull(response);
@@ -34,12 +74,12 @@ public static class IntegrationApiExtensions
 
     public static async Task<T> GetJson<T>(this IAlbaHost host, RegisterPlayerResponse asWhom, string url)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Get.Url(url);
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, asWhom.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var response = await result.ReadAsJsonAsync<T>();
         Assert.NotNull(response);
@@ -68,13 +108,13 @@ public static class IntegrationApiExtensions
     public static async Task<ShipBuildResponse> QueueShip(
         this IAlbaHost host, RegisterPlayerResponse registration, ShipType type)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Json(new QueueShipRequest(type))
                 .ToUrl($"/api/planets/{registration.HomeworldId}/ship-queue");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var build = await result.ReadAsJsonAsync<ShipBuildResponse>();
         Assert.NotNull(build);
@@ -87,13 +127,13 @@ public static class IntegrationApiExtensions
         var planet = await host.GetPlanet(registration);
         if (!planet.Buildings.Any(b => b.Type == BuildingType.Shipyard))
         {
-            await host.Scenario(s =>
+            var result = await host.Send(s =>
             {
                 s.Post.Json(new PlaceBuildingRequest(BuildingType.Shipyard))
                     .ToUrl($"/api/planets/{registration.HomeworldId}/buildings");
                 s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-                s.StatusCodeShouldBe(200);
             });
+            result.EnsureExpected(200);
         }
 
         await host.PollUntil(
@@ -169,13 +209,13 @@ public static class IntegrationApiExtensions
         CargoRequest? cargo = null,
         Guid? planetId = null)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Json(new AssembleFleetRequest(shipIds, cargo))
                 .ToUrl($"/api/planets/{planetId ?? registration.HomeworldId}/fleets");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var fleet = await result.ReadAsJsonAsync<FleetResponse>();
         Assert.NotNull(fleet);
@@ -189,13 +229,13 @@ public static class IntegrationApiExtensions
         MissionType mission,
         Guid destinationPlanetId)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Json(new LaunchMissionRequest(mission, destinationPlanetId))
                 .ToUrl($"/api/fleets/{fleetId}/missions");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var fleet = await result.ReadAsJsonAsync<FleetResponse>();
         Assert.NotNull(fleet);
@@ -205,12 +245,12 @@ public static class IntegrationApiExtensions
     public static async Task<FleetResponse> Disband(
         this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Url($"/api/fleets/{fleetId}/disband");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var fleet = await result.ReadAsJsonAsync<FleetResponse>();
         Assert.NotNull(fleet);
@@ -220,12 +260,12 @@ public static class IntegrationApiExtensions
     public static async Task<FleetResponse> Recall(
         this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Url($"/api/fleets/{fleetId}/cancel");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var fleet = await result.ReadAsJsonAsync<FleetResponse>();
         Assert.NotNull(fleet);
@@ -249,12 +289,12 @@ public static class IntegrationApiExtensions
     public static async Task<FleetResponse> Unload(
         this IAlbaHost host, RegisterPlayerResponse registration, Guid fleetId)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Url($"/api/fleets/{fleetId}/unload");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var fleet = await result.ReadAsJsonAsync<FleetResponse>();
         Assert.NotNull(fleet);
@@ -448,13 +488,13 @@ public static class IntegrationApiExtensions
     public static async Task<PlanetResponse> PlaceBuilding(
         this IAlbaHost host, RegisterPlayerResponse registration, BuildingType type, Guid? planetId = null)
     {
-        var result = await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Post.Json(new PlaceBuildingRequest(type))
                 .ToUrl($"/api/planets/{planetId ?? registration.HomeworldId}/buildings");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(200);
         });
+        result.EnsureExpected(200);
 
         var planet = await result.ReadAsJsonAsync<PlanetResponse>();
         Assert.NotNull(planet);
@@ -468,12 +508,12 @@ public static class IntegrationApiExtensions
     public static async Task CancelConstruction(
         this IAlbaHost host, RegisterPlayerResponse registration, int slotIndex, Guid? planetId = null)
     {
-        await host.Scenario(s =>
+        var result = await host.Send(s =>
         {
             s.Delete.Url($"/api/planets/{planetId ?? registration.HomeworldId}/buildings/{slotIndex}/construction");
             s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
-            s.StatusCodeShouldBe(204);
         });
+        result.EnsureExpected(204);
     }
 
     /// <summary>

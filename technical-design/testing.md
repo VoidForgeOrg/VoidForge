@@ -38,6 +38,7 @@ This avoids booting the app per test class (Marten schema migration is slow).
 Since #62, API-driving helpers are shared extension methods on `IAlbaHost` — do not re-declare them privately in test classes. Add missing helpers to the shared layer instead.
 
 - `Support/IntegrationApiExtensions.cs` — register/get/build/assemble/launch/poll helpers. All assert success (200) unless the name says otherwise (`PostForStatus`); polling helpers return the last-seen state on timeout so the caller's assertion reports the failure. `CompleteArrivalWithRetry` / `LaunchAndArriveInstantly` invoke `CompleteFleetArrivalHandler` directly with a bounded `ConcurrencyException` retry — always drive handler-invoked arrivals through these, never a bare `Handle(...)` call, because a direct call races the real durable scheduler on the same Fleet stream and bypasses Program.cs's #39 retry ladder.
+- **The universal "no 5xx" tripwire.** Every asserting helper runs through `Send`, which enforces the product invariant *a caller must never receive a 500*: any request that comes back 5xx (except the modeled **503**, returned for `NoUncolonizedPlanets`) throws **`ServerErrorException`** — carrying the method, URL, and body — instead of `StatusCodeShouldBe`. Nothing in the suite (or the soak driver) catches it, so a server error always fails the test loudly, wherever it happens (atomic call, deep inside a composite like `BuildRosterShips`, or a GET poll). Modeled non-200s (403/409/503) throw the **catchable** `UnexpectedStatusException`, so contention-tolerant callers can `catch` those without ever masking a 500. Negative tests that need to inspect a raw code use `PostForStatus` / `CancelForStatus` (raw int, no tripwire).
 - `Support/TestTimeouts.cs` — the suite's named poll cadence and deadlines (`PollInterval`, `Completion`, `StockRecovery`, `QueueDrain`, `Arrival`, `FullLoopArrival`). Use these instead of inline `TimeSpan` literals; they time out real HTTP polling and are unrelated to the app's injected `TimeProvider`.
 
 Usage shape (the class keeps its `[Collection]` + `AppFixture` wiring):
@@ -58,6 +59,21 @@ Every test class carries exactly one xUnit trait: `[Trait("Category", "Unit")]` 
 - **Full lane + coverage:** the CI `test` job runs the whole suite unfiltered with `--collect:"XPlat Code Coverage"`; the 70% line gate (`src/coverlet.runsettings`) is enforced only on this complete run.
 
 New test classes MUST be tagged — an untagged class silently runs in neither filtered lane.
+
+### Soak lane (`src/Voidforge.SoakTests/`, out of the solution)
+
+The live soak-run verifier (design: `technical-design/research/verifier-live-soak-run.md`) lives in a
+**separate `Voidforge.SoakTests` project that is deliberately NOT in `src/Voidforge.slnx`**, so it is
+invisible to `dotnet test src/Voidforge.slnx`, the CI `test`/`unit` jobs, and the Stop-hook. It boots
+the real host against an **isolated, auto-created `voidforge_soak_test` DB** (separate from the shared
+`voidforge_test`, so it never collides with a hook- or CI-triggered run), drives two contending users
+over real HTTP for a bounded window while the real Wolverine scheduler fires completions, then asserts
+Tier-1 invariants. Run it explicitly:
+
+```bash
+SOAK_WINDOW_SECONDS=120 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj   # skeleton smoke
+SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj   # reaches the depletion cascade
+```
 
 ## Log Level Under Test
 

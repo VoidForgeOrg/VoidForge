@@ -1,0 +1,107 @@
+using System.Globalization;
+using System.Text;
+using Voidforge.Api.Domain;
+using Voidforge.Api.Scoring;
+
+namespace Voidforge.SoakTests;
+
+// A compact human-readable console report: the per-invariant PASS/FAIL matrix plus raw aggregates
+// (ore mined per planet, asset counts, per-player score). The seed for a future Tier-2 blessing.
+public static class SoakReport
+{
+    public static string Render(
+        WorldSnapshot s, Tier1Report report, ScoreCalculator scoreCalculator, IReadOnlyList<string> legEvents)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("=== Voidforge Soak Report (Tier 1) ===");
+        Emit(sb, $"Snapshot instant : {s.Now}");
+        Emit(sb, $"Planets {s.Planets.Count}  Fleets {s.Fleets.Count}  Players {s.Players.Count}");
+        Emit(sb, $"Dead letters     : {s.DeadLetterCount}");
+        Emit(sb, $"Raced statuses   : {FormatStatuses(s.HttpStatuses)}");
+        Emit(sb, $"Deposit snapshots: {s.DepositSeries.Count}");
+        sb.AppendLine();
+        AppendInvariants(sb, report);
+        sb.AppendLine();
+        AppendOreMined(sb, s);
+        sb.AppendLine();
+        AppendScores(sb, s, scoreCalculator);
+        sb.AppendLine();
+        AppendLegEvents(sb, legEvents);
+        return sb.ToString();
+    }
+
+    private static string FormatStatuses(IReadOnlyList<int> statuses)
+    {
+        if (statuses.Count == 0)
+        {
+            return "none";
+        }
+
+        var grouped = statuses
+            .GroupBy(c => c)
+            .OrderBy(g => g.Key)
+            .Select(g => $"{g.Key}x{g.Count()}");
+        return string.Join(", ", grouped);
+    }
+
+    private static void AppendInvariants(StringBuilder sb, Tier1Report report)
+    {
+        sb.AppendLine("Invariants:");
+        foreach (var result in report.Results)
+        {
+            Emit(sb, $"  [{(result.Passed ? "PASS" : "FAIL")}] {result.Id} {result.Title}");
+            foreach (var violation in result.Violations)
+            {
+                Emit(sb, $"         - {violation}");
+            }
+        }
+    }
+
+    private static void AppendOreMined(StringBuilder sb, WorldSnapshot s)
+    {
+        sb.AppendLine("Ore mined (initial deposit - current), producing planets only:");
+        var any = false;
+        foreach (var p in s.Planets)
+        {
+            var initial = p.IronOreDeposit.StorageCapacity;
+            var current = p.IronOreDeposit.GetCurrentValue(s.Now);
+            var mined = initial - current;
+            if (mined > 0m)
+            {
+                any = true;
+                Emit(sb, $"  planet {p.Id}: {mined} mined ({current}/{initial} remaining)");
+            }
+        }
+
+        if (!any)
+        {
+            sb.AppendLine("  (none)");
+        }
+    }
+
+    private static void AppendScores(StringBuilder sb, WorldSnapshot s, ScoreCalculator scoreCalculator)
+    {
+        sb.AppendLine("Per-player score:");
+        foreach (var player in s.Players)
+        {
+            var ownedPlanets = s.Planets.Where(p => p.OwnerId == player.Id).ToList();
+            var ownedFleets = s.Fleets.Where(f => f.OwnerId == player.Id).ToList();
+            var score = scoreCalculator.Compute(ownedPlanets, ownedFleets, s.Now);
+            Emit(sb, $"  {player.Name}: score {score} ({ownedPlanets.Count} planet(s), {ownedFleets.Count} fleet(s))");
+        }
+    }
+
+    private static void AppendLegEvents(StringBuilder sb, IReadOnlyList<string> legEvents)
+    {
+        sb.AppendLine("Driver leg events:");
+        foreach (var evt in legEvents)
+        {
+            Emit(sb, $"  {evt}");
+        }
+    }
+
+    // Appends an interpolated line under the invariant culture — avoids CA1305/MA0011 on the
+    // interpolated StringBuilder.AppendLine overload while keeping the call sites readable.
+    private static void Emit(StringBuilder sb, FormattableString line) =>
+        sb.AppendLine(line.ToString(CultureInfo.InvariantCulture));
+}
