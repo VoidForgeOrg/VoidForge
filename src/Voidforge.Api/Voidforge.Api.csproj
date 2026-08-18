@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Voidforge.Tests" />
+    <InternalsVisibleTo Include="Voidforge.SoakTests" />
   </ItemGroup>
 
   <ItemGroup>

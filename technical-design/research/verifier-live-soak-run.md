@@ -1,7 +1,33 @@
 # Verifier Research: Live Soak-Run Verifier
 
-> **Status:** Research / design proposal. No code exists yet. This document is the design
-> for the verifier the team will **primarily** implement.
+> **Status:** Design + **v1 walking skeleton shipped**. This document is the design for the
+> verifier the team is **primarily** implementing; §2–§8 remain the target end-state.
+>
+> **v1 (shipped, `src/Voidforge.SoakTests/`):** a standalone `dotnet test` project — deliberately
+> **not** in `src/Voidforge.slnx`, so no CI lane or Stop-hook runs it — that boots the real host
+> against an isolated auto-created `voidforge_soak_test` DB with the §8.2 theme config, drives the
+> two-user scenario over real HTTP for a bounded window (`SOAK_WINDOW_SECONDS`, default 120),
+> drains via **aggregate-quiesce + settle-cap**, snapshots via Marten, and asserts **Tier 1
+> (I1–I11)**. Run: `SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj`.
+> Validated: a 90 s and a 300 s run each pass all 11 invariants; the run genuinely exercised
+> parallel Planet-stream appends (observed `23505` optimistic-concurrency collisions absorbed by the
+> retry ladder — I3 dead-letters empty, I5 clean). **Deferred to follow-ups:** Tier 2 baselines +
+> blessing, Tier 3 structural outcomes, envelope-based drain, CI gating, multi-theme matrix.
+>
+> **Two findings from v1 (acted on):**
+> 1. **Transport is own-planets-only, so §8.2's A→B lifeline was infeasible — the scenario was
+>    reshaped.** `FleetEndpoints.ValidateMissionPrecondition` (`FleetEndpoints.cs:459-461`) 403s a
+>    Transport whose destination is not owned by the caller, so "Player A delivers ore to Player B"
+>    cannot happen. v1 instead runs a faithful **within-player supply line**: Player A colonizes a
+>    second planet in another system, then Transports ore from its homeworld to that **own** colony —
+>    a same-owner destination, so the mission launches 200 and the cargo delivers + auto-unloads on
+>    arrival. Player B keeps the Colonize → mid-transit Recall leg for reschedule coverage. Validated:
+>    a 300 s run shows `A: supply transport -> 200`, A owning 2 planets / 2 fleets, and the delivery
+>    completing over the real scheduler. **§8.2's prose below is superseded** by this shape (its
+>    "B receives A's ore → ingot-storage-full on B" chain does not occur; see the §8.2 note).
+> 2. **Open Question #1 (drain signal) is resolved for v1** by aggregate-quiesce (§5.4), avoiding the
+>    unverified `wolverine_*_envelopes` schema entirely. Envelope introspection remains a possible
+>    hardening but is not required.
 >
 > **Sibling:** [`verifier-golden-diff.md`](verifier-golden-diff.md) — the complementary
 > *exact-logic* verifier that pins the pure domain math (checkpoint arithmetic, cascade
@@ -24,7 +50,7 @@ the resulting world state and assert correctness against a **tiered** assertion 
 It is a *system* test, not a *unit* test. Nothing is faked:
 
 - **Clock is real.** The app injects `TimeProvider.System` as a singleton
-  (`src/Voidforge.Api/Program.cs:92`); endpoints stamp events with `timeProvider.GetUtcNow()`
+  (`src/Voidforge.Api/Program.cs:93`); endpoints stamp events with `timeProvider.GetUtcNow()`
   and the domain computes values as a pure function of a passed-in `now`
   (`ResourcePool.GetCurrentValue`, `src/Voidforge.Api/Domain/ResourcePool.cs:15-19`). The soak
   run does **not** substitute a fake clock — that is the entire point.
@@ -32,15 +58,15 @@ It is a *system* test, not a *unit* test. Nothing is faked:
   depletion / starvation cascade checks are durable scheduled messages
   (`bus.ScheduleAsync(...)`, e.g. `src/Voidforge.Api/Endpoints/ShipConstructionScheduling.cs:16`),
   persisted to Postgres in the triggering transaction and delivered by the single-node
-  durability agent (`DurabilityMode.Solo`, `src/Voidforge.Api/Program.cs:47`) polling on a
+  durability agent (`DurabilityMode.Solo`, `src/Voidforge.Api/Program.cs:48`) polling on a
   ~5 s wall-clock interval (`technical-design/architecture.md:229`; configurable via
   `opts.Durability.ScheduledJobPollingTime`, architecture.md:318). ADR 0001 is the record of
   this "schedule optimistically, validate on arrival" model.
-- **Concurrency is real.** `EventAppendMode.Quick` (`Program.cs:33`) with `FetchForWriting`
+- **Concurrency is real.** `EventAppendMode.Quick` (`Program.cs:34`) with `FetchForWriting`
   optimistic concurrency; multiple paths append to one `Planet` stream (parallel scheduled
   completions plus HTTP commands). A loser fails with `ConcurrencyException`, which for
-  scheduled work is replayed by the retry ladder `Program.cs:59-65` (50 ms → 1 s) and for HTTP
-  is mapped to 409 by `ConcurrencyConflictExceptionHandler` (`Program.cs:81`). The old
+  scheduled work is replayed by the retry ladder `Program.cs:60-66` (50 ms → 1 s) and for HTTP
+  is mapped to 409 by `ConcurrencyConflictExceptionHandler` (`Program.cs:82`). The old
   `MaximumParallelMessages(1)` throttle was **deliberately removed** (architecture.md:252), so
   message processing is genuinely parallel.
 
@@ -122,9 +148,9 @@ Concrete, code-grounded invariants:
 | I3 | **No dead-lettered messages.** `wolverine_dead_letters` is empty. | A dead letter means the retry ladder was exhausted — architecture.md:245-249 argues this is "effectively impossible" for the transient collisions in scope, so a non-empty table is a genuine defect. Query the table directly over the same Npgsql connection (see §5.3). |
 | I4 | **No 5xx responses.** Every driven request returned a modeled status (2xx, or an *expected* 4xx the script asked for — 409/403/503). | The driver records every response code. A 500 means an unhandled exception escaped a handler — e.g. a concurrency loser that failed to map to 409 (`ConcurrencyConflictExceptionHandler`, `Program.cs:81`). |
 | I5 | **Concurrency conflicts surface as 409, never lost.** Any conflict the driver provoked came back 409 (HTTP) and the losing command had **no** partial effect; scheduled-side conflicts left no stuck aggregate (see I6). | `Program.cs:59-65,81`; regression baseline is `SameStreamConcurrencyTests` (architecture.md:252). The driver counts 409s as *expected*, not failures. |
-| I6 | **Everything scheduled by T resolves by T + margin.** After the drain window (§5.4), **no** building is `UnderConstruction` or `ConstructionHalted` past its `CompletesAt + margin`; no ship build is `Active`/`Queued`/`Halted` past its deadline; no fleet is `InTransit` past `ArrivesAt + margin`. | Nothing may be stuck. `margin` = poll interval + retry-ladder span ≈ **7 s** (ADR 0002 §"bounded ~7 s") plus a safety multiple. Statuses: `BuildingStatus` (`BuildingStatus.cs`), `ShipBuildStatus` (`ShipBuildStatus.cs`), `FleetStatus.InTransit` (`FleetStatus.cs`). |
+| I6 | **Everything scheduled by T resolves by T + margin.** After the drain window (§5.4), **no** building is `UnderConstruction` past its `CompletesAt + margin`; no ship build is `Active` past its deadline; no fleet is `InTransit` past `ArrivesAt + margin`. `ConstructionHalted`, `Queued`, and `Halted` are modeled (ingot-starved / capacity-waiting) states, not stuck, so they are excluded. | Nothing may be stuck. `margin` = poll interval + retry-ladder span ≈ **7 s** (ADR 0002 §"bounded ~7 s") plus a safety multiple. Statuses: `BuildingStatus` (`BuildingStatus.cs`), `ShipBuildStatus` (`ShipBuildStatus.cs`), `FleetStatus.InTransit` (`FleetStatus.cs`). |
 | I7 | **Slot counts within cap.** For every planet, the count of live building slots (not `Cancelled`/`Demolished` tombstones) `<= BuildingSlotCount`. | `WorldGenOptions.BuildingSlotCount` (default 6, `WorldGenOptions.cs:8`); tombstone statuses per `BuildingStatus.cs:17,27`. |
-| I8 | **Roster / queue consistency.** A ship id appears in exactly one place: a planet roster (`Planet.Ships`) **xor** a fleet (`Fleet.Ships`) — never both, never neither-after-completion. Every `ShipQueue` entry is a live in-progress build (no tombstone status exists there). | The no-double-count rule is documented in `ScoreCalculator.CountShips` (`ScoreCalculator.cs:82-125`): assembly atomically MOVES a ship from roster to fleet; disband reverses it. The verifier re-runs this cross-check as an assertion instead of a scoring convenience. |
+| I8 | **Roster / queue uniqueness.** A ship id appears **at most once** across planet rosters (`Planet.Ships`), ship queues (`Planet.ShipQueue`), and non-`Disbanded` fleets (`Fleet.Ships`) — never in two places at once. Every `ShipQueue` entry is a live in-progress build (no tombstone status exists there). *v1 verifies uniqueness only; asserting that a completed ship never vanishes from **every** collection needs a durable completed-ship ledger and is a documented follow-up.* | The no-double-count rule is documented in `ScoreCalculator.CountShips` (`ScoreCalculator.cs:82-125`): assembly atomically MOVES a ship from roster to fleet; disband reverses it. The verifier re-runs this cross-check as an assertion instead of a scoring convenience. |
 | I9 | **Fleet cargo non-negative and bounded.** `CargoIronOre >= 0`, `CargoIronIngot >= 0`, and `GetCargoLoad() <= GetCargoCapacity(...)` for the fleet's ship mix. | `Fleet.cs:38-39,78-82`; capacity from `ShipsBalanceOptions` (`ShipsBalanceOptions.cs:8-9`). |
 | I10 | **Energy multiplier in `[0, 1]`.** Every planet's productivity multiplier is `<= 1` and `>= 0`; the blackout floor is exactly `0` — a planet with consumers but no generation yields `0` (`GetProductivityMultiplier`, `Planet.Energy.cs`). Halted/tombstone slots draw the documented fractions, not full rating. | `PlanetResponse.Energy.ProductivityMultiplier` (`PlanetResponse.cs:41-44`); halted 5% floor `BuildingSpecs.HaltedDrawFactor`; tombstones draw nothing (`BuildingStatus.cs:15-16,20-22`). |
 
@@ -273,9 +299,10 @@ constants, rates, or world-gen defaults *should* move the baseline — so:
 - If the diff appears with **no** balance/world/scoring change in the PR, it is a **regression
   candidate**: hard-investigate before re-blessing. Never re-bless to make a red run green
   without a corresponding intentional change — that is how a baseline silently absorbs a bug.
-- Rates that live in `BuildingSpecs` (drill/refinery throughput, 1:2 ratio, 5% floors) are
-  **hardcoded, not config** (`BuildingSpecs.cs`) — a change there is always a "legit game
-  change" that must move the baseline and should be called out in the PR description.
+- Rates that surface through `BuildingSpecs` (drill/refinery throughput, 1:2 ratio, 5% floors) now
+  bind from the **`Economy`** config section into `EconomyRates` (`Program.cs:125-128,139`) — a
+  change to any of them, whether via config or by editing the `EconomyRates` defaults, is a "legit
+  game change" that must move the baseline and be called out in the PR description.
 
 ## 4. World / Config Tuning for a Rich 5-Minute Run
 
@@ -302,10 +329,18 @@ Everything below binds from config sections `Balance` / `WorldGeneration`
 | Starting ore / ingots | `WorldGeneration__StartingIronOre/StartingIronIngots` | 500 / 100 | **bump** (e.g. 2000 / 800) | So construction doesn't starve before the economy ramps. |
 | World size | `WorldGeneration__SolarSystemCount` / `PlanetsPerSystem` | 5 / 3 | **≥ 40 / 3** | Enough uncolonized planets for N users + colonize legs without 503s (`AppFixture.cs:29` already bumps to 80 for the same reason). |
 
-Rates are **not** tunable: Drill `+10 ore/s`, Refinery `5 ore/s → 10 ingot/s`, the 1:2 factor,
-and the 5% floors are hardcoded in `BuildingSpecs.cs` (`:8-49`). Tuning shapes *durations,
-costs, pools, caps, speeds, world size* — never throughput. All balancing must be done around
-those fixed rates.
+Rates **are** tunable (this doc's earlier "not tunable" claim is stale as of the
+deterministic-engine work in #95). Drill ore rate, Refinery consumption, the 1:2
+`RefineryIngotOutputFactor`, generator/draw energy, and the 5% halted/shipyard-idle floors all
+live in `EconomyRates` (`src/Voidforge.Api/Domain/EconomyRates.cs`), bound from the **`Economy`**
+config section (`Program.cs:125-128`) and installed into the process-global `BuildingSpecs` table at
+`Program.cs:139` — so `Economy__DrillOreRatePerSecond`, `Economy__RefineryOreConsumptionPerSecond`,
+`Economy__RefineryIngotOutputFactor`, `Economy__HaltedDrawFactor`, etc. are all `__`-env-bindable
+exactly like `Balance`/`WorldGeneration`. The defaults equal the old constants (Drill `+10 ore/s`,
+Refinery `5 ore/s → 10 ingot/s`), so leaving `Economy` unset preserves the §4.2 math. The genuinely
+non-tunable rules are the per-type building *shapes* (which resource each type produces) and the
+`ShipsBalanceOptions` cargo/speed structure. **A change to any `Economy` value moves the Tier-2
+baseline** and must be called out in the PR (see §3.3), just like `BuildingSpecs` constants were.
 
 ### 4.2 The central tension — you tune for what you want to observe
 
@@ -409,8 +444,8 @@ those are for deterministic tests and are the wrong tool here.)
    on the ~5 s poll (architecture.md:229) with up to the ~7 s race margin (ADR 0002), a snapshot
    taken the instant driving stops would show spurious `UnderConstruction`/`InTransit` that are
    merely *pending*, not *stuck* — false I6 failures. So after stopping, **quiesce**: poll the
-   world until no aggregate has a `CompletesAt`/`ArrivesAt` in the past-minus-margin *and* the
-   outgoing-envelope backlog for due messages is empty, or a hard drain cap (e.g. 3 × poll ≈
+   world until no `Planet`/`Fleet` aggregate has a `CompletesAt`/`ArrivesAt` in the past-minus-margin,
+   or a hard drain cap (e.g. 3 × poll ≈
    15–20 s) elapses. Only then take the **single authoritative snapshot** with one fixed
    `now = TimeProvider.System.GetUtcNow()` reused for the whole snapshot (§2 Tier-2 jitter rule).
 
@@ -425,10 +460,10 @@ Every source of run-to-run variation, and which tier absorbs it:
 | Source | Reference | Absorbed by |
 |--------|-----------|-------------|
 | Read-time value = `checkpoint + rate × elapsed(realtime)` | `ResourcePool.cs:15-19` | **Tier 2** (ε/%) and the §5.4 single-`now` drained snapshot; never exact-diffed |
-| Event-order race (scheduled completion vs HTTP command) | ADR 0001; `Program.cs:33,59-65` | **Tier 1** invariants (order-independent by design) + **Tier 2** for totals |
+| Event-order race (scheduled completion vs HTTP command) | ADR 0001; `Program.cs:34,60-66` | **Tier 1** invariants (order-independent by design) + **Tier 2** for totals |
 | Under-credit residual on inverted delivery | ADR 0002 §"Residual under-credit"; `ResourcePool.cs:9-14` | **Tier 2** ε on conservation reconciliation; bounded, never Tier-1 (never corrupts) |
 | ~5 s poll granularity (events fire late) | architecture.md:229,318 | **Tier 3** timing slack (`k × pollInterval`); §5.4 drain before snapshot |
-| Concurrency retry backoff timing (50 ms–1 s) | `Program.cs:59-65` | **Tier 1** I5/I6 (conflicts resolve, nothing lost); adds to I6 margin |
+| Concurrency retry backoff timing (50 ms–1 s) | `Program.cs:60-66` | **Tier 1** I5/I6 (conflicts resolve, nothing lost); adds to I6 margin |
 | Unseeded planet coordinates → travel distances/times vary | `WorldSeeder.cs:57,96-99` | **Tier 3** slack (transit deadlines are `+k×poll`); **Tier 2** count-based, not distance-based |
 | `Guid.NewGuid()` ids everywhere | `WorldSeeder.cs:61,69` | Not asserted on — verifier never checks specific ids, only counts/relationships (I8) |
 | `Random.Shared` homeworld pick (unseeded default) over the id-ordered candidate query | `PlayerEndpoints` (`OrderBy(p => p.Id)`) | **Tier 3** (owns ≥N planets), not "owns planet X" |
@@ -501,6 +536,14 @@ overload, `testing.md:20`).
 
 ### 8.2 A concrete 5-minute scenario: "Two-user economy with a transport lifeline and a depletion"
 
+> ⚠️ **v1 reshape (implemented):** the "transport lifeline from A to B" below is **infeasible** —
+> Transport requires a same-owner destination (`FleetEndpoints.cs:459-461`), so A→B 403s. The
+> shipped v1 driver instead runs a **within-player supply line**: Player A colonizes a second planet
+> in another system and Transports ore from its homeworld to that **own** colony (launches 200,
+> delivers + auto-unloads on arrival); Player B keeps Colonize → mid-transit Recall. Read the A/B
+> walkthrough below as the *original* design intent — the code in `src/Voidforge.SoakTests/` is the
+> source of truth for the shipped scenario.
+
 **Config theme:** tuned for depletion + an ingot-storage-full near the end. Key overrides:
 `IronOrePool=4000`, `IronIngotStorageCapacity=2500`, `StartingIronOre=2000`,
 `StartingIronIngots=800`, all build durations `20 s`, ship durations/costs `15 s`/`60`,
@@ -549,10 +592,14 @@ overload, `testing.md:20`).
 
 ## 9. Open Questions / Decisions for the Team
 
-1. **Drain-completeness signal.** §5.4 quiesces by polling aggregates + the outgoing-envelope
-   backlog. Is querying `wolverine_outgoing_envelopes` for due-but-undelivered messages an
-   acceptable "scheduler is idle" signal, or should we expose a small health/introspection hook?
-   Getting this wrong is the most likely source of false I6 failures.
+1. **Drain-completeness signal. — RESOLVED for v1 via aggregate-quiesce (no envelope query).** §5.4
+   quiesces by polling `Planet`/`Fleet` aggregates only (no envelope query). Is querying
+   `wolverine_outgoing_envelopes` for due-but-undelivered messages an acceptable "scheduler is idle"
+   signal, or should we expose a small health/introspection hook? Getting this wrong is the most
+   likely source of false I6 failures. **v1 decision:** poll aggregates for anything overdue past a
+   ~10 s margin, then wait a fixed settle (~15 s) capped at ~30 s — no dependency on the (unverified)
+   `wolverine_*_envelopes` schema. Held across the validation runs with zero false I6 failures.
+   Envelope introspection stays open only as an optional precision hardening.
 2. **How many scenario themes?** One themed run can't maximize depletion *and* both storage-full
    variants (§4.2). Do we run one broad scenario nightly, or a small matrix of themed scenarios
    (depletion / ore-full / ingot-full / starvation), each with its own baseline?
