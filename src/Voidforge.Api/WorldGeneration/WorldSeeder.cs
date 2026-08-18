@@ -52,24 +52,45 @@ public sealed partial class WorldSeeder(
 
     // Stages every solar system and planet stream into the session's pending unit of work
     // without saving — the caller commits them together with the seed marker in one transaction.
+    // Generation itself is factored into the pure BuildWorld so it can be unit-tested (determinism)
+    // without a session or a database.
     private static void StageWorld(IDocumentSession session, WorldGenOptions opts)
     {
-        var random = new Random();
+        foreach (var planned in BuildWorld(opts))
+        {
+            foreach (var planet in planned.Planets)
+            {
+                session.Events.StartStream<Planet>(planet.PlanetId, planet.Event);
+            }
 
+            session.Store(planned.System);
+        }
+    }
+
+    // Pure world generator. Deterministic when opts.Seed is set: coordinates AND ids are drawn from a
+    // seeded PRNG in a FIXED order (per system: id → X → Y → Z; per planet: id → X-offset → Y-offset →
+    // Z-offset), so the same seed reproduces byte-identical systems and planets. When Seed is null it
+    // falls back to an unseeded Random and Guid.NewGuid(), preserving the original behavior.
+    internal static IReadOnlyList<PlannedSystem> BuildWorld(WorldGenOptions opts)
+    {
+        var deterministic = opts.Seed is not null;
+        var random = deterministic ? new Random(opts.Seed!.Value) : new Random();
+
+        var systems = new List<PlannedSystem>(opts.SolarSystemCount);
         for (var s = 0; s < opts.SolarSystemCount; s++)
         {
-            var systemId = Guid.NewGuid();
-            var planetIds = new List<Guid>();
+            var systemId = NextId(random, deterministic);
             var systemX = NextCoordinate(random, opts.CoordinateRange);
             var systemY = NextCoordinate(random, opts.CoordinateRange);
             var systemZ = NextCoordinate(random, opts.CoordinateRange);
 
+            var planets = new List<PlannedPlanet>(opts.PlanetsPerSystem);
+            var planetIds = new List<Guid>(opts.PlanetsPerSystem);
             for (var p = 0; p < opts.PlanetsPerSystem; p++)
             {
-                var planetId = Guid.NewGuid();
+                var planetId = NextId(random, deterministic);
                 planetIds.Add(planetId);
-
-                session.Events.StartStream<Planet>(planetId, new PlanetCreated(
+                planets.Add(new PlannedPlanet(planetId, new PlanetCreated(
                     Name: $"Planet {s + 1}-{p + 1}",
                     SolarSystemId: systemId,
                     IronOrePool: opts.IronOrePool,
@@ -78,19 +99,38 @@ public sealed partial class WorldSeeder(
                     IronIngotStorageCapacity: opts.IronIngotStorageCapacity,
                     X: systemX + NextCoordinate(random, opts.PlanetSpread),
                     Y: systemY + NextCoordinate(random, opts.PlanetSpread),
-                    Z: systemZ + NextCoordinate(random, opts.PlanetSpread)));
+                    Z: systemZ + NextCoordinate(random, opts.PlanetSpread))));
             }
 
-            session.Store(new SolarSystem
-            {
-                Id = systemId,
-                Name = $"System {s + 1}",
-                X = systemX,
-                Y = systemY,
-                Z = systemZ,
-                PlanetIds = planetIds,
-            });
+            systems.Add(new PlannedSystem(
+                new SolarSystem
+                {
+                    Id = systemId,
+                    Name = $"System {s + 1}",
+                    X = systemX,
+                    Y = systemY,
+                    Z = systemZ,
+                    PlanetIds = planetIds,
+                },
+                planets));
         }
+
+        return systems;
+    }
+
+    // Deterministic-when-seeded id: fills 16 bytes from the seeded PRNG so the same seed reproduces the
+    // same id. The bytes need not form an RFC-valid Guid version/variant — Marten only needs a stable
+    // unique key for the stream/document id. Unseeded, falls back to Guid.NewGuid().
+    private static Guid NextId(Random random, bool deterministic)
+    {
+        if (!deterministic)
+        {
+            return Guid.NewGuid();
+        }
+
+        var bytes = new byte[16];
+        random.NextBytes(bytes);
+        return new Guid(bytes);
     }
 
     private static decimal NextCoordinate(Random random, decimal range)

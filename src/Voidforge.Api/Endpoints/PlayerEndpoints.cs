@@ -103,11 +103,11 @@ public static class PlayerEndpoints
     {
         await using var session = store.LightweightSession();
 
-        // Perf: loads all uncolonized planet IDs into memory. Replace with COUNT + random
-        // offset or database-side random selection when planet counts grow large.
+        // Loads all uncolonized planet IDs into memory (revisit at scale). OrderBy(Id) makes the list
+        // stable regardless of Postgres row order — required for SelectHomeworld's deterministic pick.
         var uncolonized = await session.Query<Planet>()
             .Where(p => p.OwnerId == null)
-            .Select(p => p.Id)
+            .OrderBy(p => p.Id).Select(p => p.Id)
             .ToListAsync();
 
         if (uncolonized.Count == 0)
@@ -115,7 +115,7 @@ public static class PlayerEndpoints
             return (ClaimOutcome.NoUncolonizedPlanets, null);
         }
 
-        var homeworldId = uncolonized[Random.Shared.Next(uncolonized.Count)];
+        var homeworldId = SelectHomeworld(uncolonized, opts);
 
         var stream = await session.Events.FetchForWriting<Planet>(homeworldId);
         if (stream.Aggregate?.OwnerId is not null)
@@ -161,6 +161,14 @@ public static class PlayerEndpoints
             return (ClaimOutcome.NameTaken, null);
         }
     }
+
+    // Determinism (verifier tooling): when a world Seed is configured, pick the lowest-id uncolonized
+    // planet so homeworld assignment is reproducible. As planets get claimed the "first available"
+    // advances, so SEQUENTIAL registrations get distinct, predictable homeworlds. Under CONCURRENT
+    // registration the registration order is itself a race, so who-gets-what is reproducible only when
+    // players register sequentially. Unseeded (production default), keep the original random pick.
+    private static Guid SelectHomeworld(IReadOnlyList<Guid> uncolonized, WorldGenOptions opts)
+        => uncolonized[opts.Seed is not null ? 0 : Random.Shared.Next(uncolonized.Count)];
 
     // Schedule the freshly-seeded homeworld's initial cascade checks (#69/#70), mirroring the other
     // mutation sites (BuildingEndpoints.Place etc.). The homeworld is seeded with an Operational Drill

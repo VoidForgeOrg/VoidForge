@@ -18,6 +18,11 @@ public sealed class BalanceOptions
 
     public ShipsBalanceOptions Ships { get; set; } = new();
 
+    // How long a demolition takes from immediate shutdown to the slot-freeing teardown (#72).
+    // Balance placeholder (10 minutes, TBD). Endpoint-baked into the scheduled teardown (like the
+    // construction costs/durations above), so replay needs no config.
+    public decimal DemolitionDurationSeconds { get; set; } = 600m;
+
     public ConstructionBalance ForBuilding(BuildingType type) => type switch
     {
         BuildingType.Drill => Drill,

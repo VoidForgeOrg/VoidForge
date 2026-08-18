@@ -3,6 +3,7 @@ using JasperFx.Events;
 using Marten;
 using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
@@ -113,11 +114,29 @@ builder.Services.AddSwaggerGen(opts =>
     });
 });
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
-builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
+// Balance and Economy are validated at startup (ValidateOnStart): their configurable leaves feed
+// scheduling deadlines and the process-global BuildingSpecs rate table (a divisor, draw fractions,
+// non-negative rates), so an invalid section must abort the host before it serves traffic rather than
+// surface as a runtime divide-by-zero or a past-dated completion.
+builder.Services.AddOptions<BalanceOptions>()
+    .Bind(builder.Configuration.GetSection("Balance"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<BalanceOptions>, BalanceOptionsValidator>();
+builder.Services.AddOptions<EconomyRates>()
+    .Bind(builder.Configuration.GetSection("Economy"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<EconomyRates>, EconomyRatesValidator>();
+builder.Services.Configure<ScoringOptions>(builder.Configuration.GetSection("Scoring"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 
 var app = builder.Build();
+
+// Install the configured economy rate table into the domain BEFORE the host serves traffic or the
+// WorldSeeder runs, so every event replay reads the configured rates (they must be fixed for the
+// process lifetime — see BuildingSpecs). Defaults to the balancing placeholders when no "Economy"
+// configuration section is present.
+BuildingSpecs.Configure(app.Services.GetRequiredService<IOptions<EconomyRates>>().Value);
 
 app.UseExceptionHandler();
 app.UseSwagger();
