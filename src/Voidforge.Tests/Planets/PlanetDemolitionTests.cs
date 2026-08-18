@@ -38,15 +38,16 @@ public sealed class PlanetDemolitionTests
     [Fact]
     public void StartDemolitionOnOperationalProducesEvent()
     {
+        const decimal demolitionSeconds = 600m;
         var now = DateTimeOffset.UtcNow;
         var planet = Homeworld(now);
 
-        var events = planet.StartDemolition(0, now, BuildingSpecs.DemolitionDurationSeconds);
+        var events = planet.StartDemolition(0, now, demolitionSeconds);
 
         var started = Assert.IsType<BuildingDemolitionStarted>(Assert.Single(events));
         Assert.Equal(0, started.SlotIndex);
         Assert.Equal(now, started.At);
-        Assert.Equal(now.AddSeconds((double)BuildingSpecs.DemolitionDurationSeconds), started.CompletesAt);
+        Assert.Equal(now.AddSeconds((double)demolitionSeconds), started.CompletesAt);
         // Pure: no mutation before Apply — the slot is still Operational.
         Assert.Equal(BuildingStatus.Operational, planet.Buildings[0].Status);
     }

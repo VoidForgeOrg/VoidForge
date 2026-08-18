@@ -3,6 +3,7 @@ using JasperFx.Events;
 using Marten;
 using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using Voidforge.Api.Auth;
 using Voidforge.Api.Balance;
@@ -114,10 +115,17 @@ builder.Services.AddSwaggerGen(opts =>
 });
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
 builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
+builder.Services.Configure<EconomyRates>(builder.Configuration.GetSection("Economy"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 
 var app = builder.Build();
+
+// Install the configured economy rate table into the domain BEFORE the host serves traffic or the
+// WorldSeeder runs, so every event replay reads the configured rates (they must be fixed for the
+// process lifetime — see BuildingSpecs). Defaults to the balancing placeholders when no "Economy"
+// configuration section is present.
+BuildingSpecs.Configure(app.Services.GetRequiredService<IOptions<EconomyRates>>().Value);
 
 app.UseExceptionHandler();
 app.UseSwagger();

@@ -134,6 +134,7 @@ public static class BuildingEndpoints
         ClaimsPrincipal principal,
         IDocumentSession session,
         IMessageBus bus,
+        IOptions<BalanceOptions> balanceOptions,
         TimeProvider timeProvider)
     {
         // FetchForWriting arms Marten's optimistic-concurrency guard from the fetched stream version.
@@ -161,11 +162,12 @@ public static class BuildingEndpoints
         }
 
         var now = timeProvider.GetUtcNow();
-        var events = planet.StartDemolition(slotIndex, now, BuildingSpecs.DemolitionDurationSeconds);
+        var demolitionSeconds = balanceOptions.Value.DemolitionDurationSeconds;
+        var events = planet.StartDemolition(slotIndex, now, demolitionSeconds);
         stream.AppendMany([.. events]);
         // Schedule the teardown through the Marten transactional outbox (persisted with this
         // transaction; survives restart). Validate-on-arrival makes redelivery safe.
-        var completesAt = now.AddSeconds((double)BuildingSpecs.DemolitionDurationSeconds);
+        var completesAt = now.AddSeconds((double)demolitionSeconds);
         await bus.ScheduleAsync(
             new CompleteBuildingDemolition(planetId, slotIndex, completesAt),
             completesAt);
