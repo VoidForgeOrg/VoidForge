@@ -116,6 +116,7 @@ builder.Services.AddSwaggerGen(opts =>
 builder.Services.Configure<WorldGenOptions>(builder.Configuration.GetSection("WorldGeneration"));
 builder.Services.Configure<BalanceOptions>(builder.Configuration.GetSection("Balance"));
 builder.Services.Configure<EconomyRates>(builder.Configuration.GetSection("Economy"));
+builder.Services.Configure<ScoringOptions>(builder.Configuration.GetSection("Scoring"));
 builder.Services.AddHostedService<WorldSeeder>();
 builder.Services.AddHealthChecks().AddNpgSql(connectionString);
 

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Voidforge.Api.Domain;
 
 namespace Voidforge.Api.Scoring;
@@ -12,21 +13,32 @@ namespace Voidforge.Api.Scoring;
 // Compute is the convenience composition of the two.
 public sealed class ScoreCalculator
 {
-    // Pure: points = planets + buildings + ships + resources, all weighted by ScoringSpecs. Decimal end
-    // to end (resources are decimal) — no premature rounding; final rounding is a balancing concern.
+    private readonly ScoringOptions _scoring;
+
+    // Bound from the "Scoring" configuration section via DI. The optional/null default keeps the
+    // parameterless construction used by unit tests scoring exactly as the ScoringSpecs defaults
+    // (ScoringOptions defaults mirror those constants).
+    public ScoreCalculator(IOptions<ScoringOptions>? options = null)
+    {
+        _scoring = options?.Value ?? new ScoringOptions();
+    }
+
+    // Pure: points = planets + buildings + ships + resources, all weighted by the configured scoring
+    // options. Decimal end to end (resources are decimal) — no premature rounding; final rounding is a
+    // balancing concern.
     public decimal Score(ScoreComponents components)
     {
-        var planetPoints = components.PlanetCount * ScoringSpecs.PointsPerPlanet;
+        var planetPoints = components.PlanetCount * _scoring.PointsPerPlanet;
 
         var buildingPoints = components.BuildingCounts
-            .Sum(kvp => ScoringSpecs.BuildingPoints(kvp.Key) * kvp.Value);
+            .Sum(kvp => _scoring.BuildingPoints(kvp.Key) * kvp.Value);
 
         var shipPoints = components.ShipCounts
-            .Sum(kvp => ScoringSpecs.ShipPoints(kvp.Key) * kvp.Value);
+            .Sum(kvp => _scoring.ShipPoints(kvp.Key) * kvp.Value);
 
         var resourcePoints =
-            (components.IronOre * ScoringSpecs.ResourcePointsPerUnit(ResourceType.IronOre))
-            + (components.IronIngot * ScoringSpecs.ResourcePointsPerUnit(ResourceType.IronIngot));
+            (components.IronOre * _scoring.ResourcePointsPerUnit(ResourceType.IronOre))
+            + (components.IronIngot * _scoring.ResourcePointsPerUnit(ResourceType.IronIngot));
 
         return planetPoints + buildingPoints + shipPoints + resourcePoints;
     }
