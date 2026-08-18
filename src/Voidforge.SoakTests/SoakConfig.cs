@@ -13,9 +13,11 @@ public static class SoakConfig
 
     private const int _defaultWindowSeconds = 120;
 
-    // Overridable via the ConnectionStrings__Marten env var (read first, soak default second).
+    // Overridable via the dedicated VOIDFORGE_SOAK_CONNECTION_STRING env var (read first, soak default
+    // second). Deliberately NOT the shared ConnectionStrings__Marten host key, so a stray host-level
+    // Marten connection string can never be picked up here and have its schema dropped.
     public static string ConnectionString =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__Marten") ?? DefaultConnectionString;
+        Environment.GetEnvironmentVariable("VOIDFORGE_SOAK_CONNECTION_STRING") ?? DefaultConnectionString;
 
     // Bounded soak window. 120s exercises the whole loop; the §8.2 depletion + ingot-storage-full
     // cascades fire at ~170-200s, so OBSERVING them (a Tier-3 follow-up) needs SOAK_WINDOW_SECONDS=300.

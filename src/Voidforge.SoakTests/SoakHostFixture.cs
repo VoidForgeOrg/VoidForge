@@ -47,11 +47,12 @@ public sealed class SoakHostFixture : IAsyncLifetime
     public Task DisposeAsync() => Host?.DisposeAsync().AsTask() ?? Task.CompletedTask;
 
     // start-infra only provisions voidforge_test; the soak DB is separate, so create it if missing to
-    // keep the run self-contained. Connect to the `voidforge` maintenance DB on the same server and,
-    // because CREATE DATABASE cannot run inside a transaction, issue it as a plain command.
+    // keep the run self-contained. Connect to the standard `postgres` maintenance database on the same
+    // server (it always exists) and, because CREATE DATABASE cannot run inside a transaction, issue it
+    // as a plain command.
     private static async Task EnsureDatabaseExistsAsync(string connStr, string targetDb)
     {
-        var admin = new NpgsqlConnectionStringBuilder(connStr) { Database = "voidforge" };
+        var admin = new NpgsqlConnectionStringBuilder(connStr) { Database = "postgres" };
         await using var conn = new NpgsqlConnection(admin.ConnectionString);
         await conn.OpenAsync();
 
@@ -67,9 +68,10 @@ public sealed class SoakHostFixture : IAsyncLifetime
         }
 
         await using var create = conn.CreateCommand();
-        // A database identifier cannot be parameterized. targetDb is our own constant/env value and the
-        // caller has already required it to contain "test", so this interpolation is safe.
-        create.CommandText = $"CREATE DATABASE \"{targetDb}\";";
+        // A database identifier cannot be parameterized, so escape it via NpgsqlCommandBuilder.QuoteIdentifier
+        // (the "test"-guard on targetDb still applies).
+        var quotedDb = new NpgsqlCommandBuilder().QuoteIdentifier(targetDb);
+        create.CommandText = $"CREATE DATABASE {quotedDb};";
         await create.ExecuteNonQueryAsync();
     }
 }

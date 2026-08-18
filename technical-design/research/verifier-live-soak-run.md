@@ -148,9 +148,9 @@ Concrete, code-grounded invariants:
 | I3 | **No dead-lettered messages.** `wolverine_dead_letters` is empty. | A dead letter means the retry ladder was exhausted — architecture.md:245-249 argues this is "effectively impossible" for the transient collisions in scope, so a non-empty table is a genuine defect. Query the table directly over the same Npgsql connection (see §5.3). |
 | I4 | **No 5xx responses.** Every driven request returned a modeled status (2xx, or an *expected* 4xx the script asked for — 409/403/503). | The driver records every response code. A 500 means an unhandled exception escaped a handler — e.g. a concurrency loser that failed to map to 409 (`ConcurrencyConflictExceptionHandler`, `Program.cs:81`). |
 | I5 | **Concurrency conflicts surface as 409, never lost.** Any conflict the driver provoked came back 409 (HTTP) and the losing command had **no** partial effect; scheduled-side conflicts left no stuck aggregate (see I6). | `Program.cs:59-65,81`; regression baseline is `SameStreamConcurrencyTests` (architecture.md:252). The driver counts 409s as *expected*, not failures. |
-| I6 | **Everything scheduled by T resolves by T + margin.** After the drain window (§5.4), **no** building is `UnderConstruction` or `ConstructionHalted` past its `CompletesAt + margin`; no ship build is `Active`/`Queued`/`Halted` past its deadline; no fleet is `InTransit` past `ArrivesAt + margin`. | Nothing may be stuck. `margin` = poll interval + retry-ladder span ≈ **7 s** (ADR 0002 §"bounded ~7 s") plus a safety multiple. Statuses: `BuildingStatus` (`BuildingStatus.cs`), `ShipBuildStatus` (`ShipBuildStatus.cs`), `FleetStatus.InTransit` (`FleetStatus.cs`). |
+| I6 | **Everything scheduled by T resolves by T + margin.** After the drain window (§5.4), **no** building is `UnderConstruction` past its `CompletesAt + margin`; no ship build is `Active` past its deadline; no fleet is `InTransit` past `ArrivesAt + margin`. `ConstructionHalted`, `Queued`, and `Halted` are modeled (ingot-starved / capacity-waiting) states, not stuck, so they are excluded. | Nothing may be stuck. `margin` = poll interval + retry-ladder span ≈ **7 s** (ADR 0002 §"bounded ~7 s") plus a safety multiple. Statuses: `BuildingStatus` (`BuildingStatus.cs`), `ShipBuildStatus` (`ShipBuildStatus.cs`), `FleetStatus.InTransit` (`FleetStatus.cs`). |
 | I7 | **Slot counts within cap.** For every planet, the count of live building slots (not `Cancelled`/`Demolished` tombstones) `<= BuildingSlotCount`. | `WorldGenOptions.BuildingSlotCount` (default 6, `WorldGenOptions.cs:8`); tombstone statuses per `BuildingStatus.cs:17,27`. |
-| I8 | **Roster / queue consistency.** A ship id appears in exactly one place: a planet roster (`Planet.Ships`) **xor** a fleet (`Fleet.Ships`) — never both, never neither-after-completion. Every `ShipQueue` entry is a live in-progress build (no tombstone status exists there). | The no-double-count rule is documented in `ScoreCalculator.CountShips` (`ScoreCalculator.cs:82-125`): assembly atomically MOVES a ship from roster to fleet; disband reverses it. The verifier re-runs this cross-check as an assertion instead of a scoring convenience. |
+| I8 | **Roster / queue uniqueness.** A ship id appears **at most once** across planet rosters (`Planet.Ships`), ship queues (`Planet.ShipQueue`), and non-`Disbanded` fleets (`Fleet.Ships`) — never in two places at once. Every `ShipQueue` entry is a live in-progress build (no tombstone status exists there). *v1 verifies uniqueness only; asserting that a completed ship never vanishes from **every** collection needs a durable completed-ship ledger and is a documented follow-up.* | The no-double-count rule is documented in `ScoreCalculator.CountShips` (`ScoreCalculator.cs:82-125`): assembly atomically MOVES a ship from roster to fleet; disband reverses it. The verifier re-runs this cross-check as an assertion instead of a scoring convenience. |
 | I9 | **Fleet cargo non-negative and bounded.** `CargoIronOre >= 0`, `CargoIronIngot >= 0`, and `GetCargoLoad() <= GetCargoCapacity(...)` for the fleet's ship mix. | `Fleet.cs:38-39,78-82`; capacity from `ShipsBalanceOptions` (`ShipsBalanceOptions.cs:8-9`). |
 | I10 | **Energy multiplier in `[0, 1]`.** Every planet's productivity multiplier is `<= 1` and `>= 0`; the blackout floor is exactly `0` — a planet with consumers but no generation yields `0` (`GetProductivityMultiplier`, `Planet.Energy.cs`). Halted/tombstone slots draw the documented fractions, not full rating. | `PlanetResponse.Energy.ProductivityMultiplier` (`PlanetResponse.cs:41-44`); halted 5% floor `BuildingSpecs.HaltedDrawFactor`; tombstones draw nothing (`BuildingStatus.cs:15-16,20-22`). |
 
@@ -444,8 +444,8 @@ those are for deterministic tests and are the wrong tool here.)
    on the ~5 s poll (architecture.md:229) with up to the ~7 s race margin (ADR 0002), a snapshot
    taken the instant driving stops would show spurious `UnderConstruction`/`InTransit` that are
    merely *pending*, not *stuck* — false I6 failures. So after stopping, **quiesce**: poll the
-   world until no aggregate has a `CompletesAt`/`ArrivesAt` in the past-minus-margin *and* the
-   outgoing-envelope backlog for due messages is empty, or a hard drain cap (e.g. 3 × poll ≈
+   world until no `Planet`/`Fleet` aggregate has a `CompletesAt`/`ArrivesAt` in the past-minus-margin,
+   or a hard drain cap (e.g. 3 × poll ≈
    15–20 s) elapses. Only then take the **single authoritative snapshot** with one fixed
    `now = TimeProvider.System.GetUtcNow()` reused for the whole snapshot (§2 Tier-2 jitter rule).
 
@@ -593,7 +593,7 @@ overload, `testing.md:20`).
 ## 9. Open Questions / Decisions for the Team
 
 1. **Drain-completeness signal. — RESOLVED for v1 via aggregate-quiesce (no envelope query).** §5.4
-   quiesces by polling aggregates + the outgoing-envelope backlog. Is querying
+   quiesces by polling `Planet`/`Fleet` aggregates only (no envelope query). Is querying
    `wolverine_outgoing_envelopes` for due-but-undelivered messages an acceptable "scheduler is idle"
    signal, or should we expose a small health/introspection hook? Getting this wrong is the most
    likely source of false I6 failures. **v1 decision:** poll aggregates for anything overdue past a

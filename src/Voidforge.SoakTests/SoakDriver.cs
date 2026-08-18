@@ -34,21 +34,28 @@ public sealed class SoakDriver
         using var snapshotCts = new CancellationTokenSource();
         var snapshotLoop = CaptureDepositSnapshotsAsync(recorder, deadline, snapshotCts.Token);
 
-        // A colonizes a second system and supplies it; B colonizes and recalls mid-transit. Each
-        // excludes its own home system so the colonize legs reach out to another system.
-        var scriptA = ScenarioScript.RunIndustrialistAsync(_host, recorder, regA, homeA.SolarSystemId, deadline);
-        var scriptB = ScenarioScript.RunColonizerAsync(_host, recorder, regB, homeB.SolarSystemId, deadline);
-        await Task.WhenAll(scriptA, scriptB);
-
-        // Keep the window open so the real scheduler can fire the arrivals / ship completions the
-        // scripts triggered, with the deposit-snapshot loop still running.
-        while (!deadline.Reached)
+        try
         {
-            await Task.Delay(SoakTimeouts.LegPause);
-        }
+            // A colonizes a second system and supplies it; B colonizes and recalls mid-transit. Each
+            // excludes its own home system so the colonize legs reach out to another system.
+            var scriptA = ScenarioScript.RunIndustrialistAsync(_host, recorder, regA, homeA.SolarSystemId, deadline);
+            var scriptB = ScenarioScript.RunColonizerAsync(_host, recorder, regB, homeB.SolarSystemId, deadline);
+            await Task.WhenAll(scriptA, scriptB);
 
-        await snapshotCts.CancelAsync();
-        await snapshotLoop;
+            // Keep the window open so the real scheduler can fire the arrivals / ship completions the
+            // scripts triggered, with the deposit-snapshot loop still running.
+            while (!deadline.Reached)
+            {
+                await Task.Delay(SoakTimeouts.LegPause);
+            }
+        }
+        finally
+        {
+            // Always stop the snapshot loop first, even if a script or the wait loop threw, so it never
+            // outlives this method (unobserved exception / queries during host disposal).
+            await snapshotCts.CancelAsync();
+            await snapshotLoop;
+        }
 
         log?.Invoke(
             $"Driver recorded {recorder.Statuses.Count} raced status(es), {recorder.Snapshots.Count} deposit snapshot(s), {recorder.Events.Count} leg event(s).");
