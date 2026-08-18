@@ -87,10 +87,13 @@ guarantee two runs of the same script diverge:
    `(rate delta) × (inversion window)` — bounded, conservative, never corrupting, but a real
    numeric difference between runs (`ResourcePool.cs:9-14`; ADR 0002 §"Residual under-credit").
 
-Plus the world itself is seeded with entropy: unseeded `new Random()` for planet coordinates
-(`WorldSeeder.cs:57`), `Guid.NewGuid()` for every id (`WorldSeeder.cs:61,69`), and a
-`Random.Shared`-picked homeworld over an unordered query
-(`PlayerEndpoints.cs:108-118`). So even the starting board differs run to run.
+Plus, **in the soak run's unseeded default** (no `WorldGeneration:Seed`), the world is generated with
+entropy: an unseeded `new Random()` for planet coordinates and `Guid.NewGuid()` for world-gen ids
+(`WorldSeeder.BuildWorld`), and a `Random.Shared`-picked homeworld over the candidate query
+(`PlayerEndpoints`). So even the starting board differs run to run. (Setting a seed makes coordinates,
+world-gen ids, and a lowest-id homeworld pick reproducible — see `verification-config.md` — but the soak
+run deliberately does *not* set one; it asserts invariants and count/threshold outcomes, not the exact
+board.)
 
 **Conclusion:** exact-diff assertions (`expected == actual` on the full snapshot) are the wrong
 tool for this harness — they would flake on every run. Reproducibility-dependent checks are the
@@ -123,7 +126,7 @@ Concrete, code-grounded invariants:
 | I7 | **Slot counts within cap.** For every planet, the count of live building slots (not `Cancelled`/`Demolished` tombstones) `<= BuildingSlotCount`. | `WorldGenOptions.BuildingSlotCount` (default 6, `WorldGenOptions.cs:8`); tombstone statuses per `BuildingStatus.cs:17,27`. |
 | I8 | **Roster / queue consistency.** A ship id appears in exactly one place: a planet roster (`Planet.Ships`) **xor** a fleet (`Fleet.Ships`) — never both, never neither-after-completion. Every `ShipQueue` entry is a live in-progress build (no tombstone status exists there). | The no-double-count rule is documented in `ScoreCalculator.CountShips` (`ScoreCalculator.cs:82-125`): assembly atomically MOVES a ship from roster to fleet; disband reverses it. The verifier re-runs this cross-check as an assertion instead of a scoring convenience. |
 | I9 | **Fleet cargo non-negative and bounded.** `CargoIronOre >= 0`, `CargoIronIngot >= 0`, and `GetCargoLoad() <= GetCargoCapacity(...)` for the fleet's ship mix. | `Fleet.cs:38-39,78-82`; capacity from `ShipsBalanceOptions` (`ShipsBalanceOptions.cs:8-9`). |
-| I10 | **Energy multiplier in `[floor, 1]`.** Every planet's productivity multiplier is `<= 1` and `>= ` the blackout floor; halted/tombstone slots draw the documented fractions, not full rating. | `PlanetResponse.Energy.ProductivityMultiplier` (`PlanetResponse.cs:41-44`); halted 5% floor `BuildingSpecs.HaltedDrawFactor` (`BuildingSpecs.cs:49`); tombstones draw nothing (`BuildingStatus.cs:15-16,20-22`). |
+| I10 | **Energy multiplier in `[0, 1]`.** Every planet's productivity multiplier is `<= 1` and `>= 0`; the blackout floor is exactly `0` — a planet with consumers but no generation yields `0` (`GetProductivityMultiplier`, `Planet.Energy.cs`). Halted/tombstone slots draw the documented fractions, not full rating. | `PlanetResponse.Energy.ProductivityMultiplier` (`PlanetResponse.cs:41-44`); halted 5% floor `BuildingSpecs.HaltedDrawFactor`; tombstones draw nothing (`BuildingStatus.cs:15-16,20-22`). |
 
 **Investigating resource conservation as an invariant.** This is tempting but **must not be
 asserted as an exact equality** — verify the model before trusting it:
@@ -428,7 +431,7 @@ Every source of run-to-run variation, and which tier absorbs it:
 | Concurrency retry backoff timing (50 ms–1 s) | `Program.cs:59-65` | **Tier 1** I5/I6 (conflicts resolve, nothing lost); adds to I6 margin |
 | Unseeded planet coordinates → travel distances/times vary | `WorldSeeder.cs:57,96-99` | **Tier 3** slack (transit deadlines are `+k×poll`); **Tier 2** count-based, not distance-based |
 | `Guid.NewGuid()` ids everywhere | `WorldSeeder.cs:61,69` | Not asserted on — verifier never checks specific ids, only counts/relationships (I8) |
-| `Random.Shared` homeworld pick over unordered query | `PlayerEndpoints.cs:108-118` | **Tier 3** (owns ≥N planets), not "owns planet X" |
+| `Random.Shared` homeworld pick (unseeded default) over the id-ordered candidate query | `PlayerEndpoints` (`OrderBy(p => p.Id)`) | **Tier 3** (owns ≥N planets), not "owns planet X" |
 | Cap-clamp overflow loss | `ResourcePool.cs:18` | **Tier 2** ε on conservation; **Tier 1** as inequality only (I11, produced ≤ theoretical) |
 
 The guiding rule: **anything time- or order-derived is a Tier-2/3 band; only order-*independent*

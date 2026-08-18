@@ -41,9 +41,11 @@ who-gets-which-homeworld is not guaranteed even with a seed. The golden-diff har
 sequentially; the soak harness does not depend on homeworld determinism (it asserts "owns ≥ N
 planets", not "owns planet X").
 
-The engine clock is already injectable (`TimeProvider.System`); a fake/controlled clock is a
-separate seam the harness may substitute. The economy rate table is process-global and installed once
-at startup (`BuildingSpecs.Configure`), so a run with differing economy rates must be its **own
+The engine clock is injected as a singleton (`TimeProvider.System`), but that registration is currently
+**unconditional** (`Program`): substituting a fake/controlled clock is a **planned seam that still
+requires a small engine change** (e.g. a config-gated `FakeTimeProvider`; see `verifier-golden-diff.md`
+§2.1), not yet a supported configuration switch. The economy rate table is process-global and installed
+once at startup (`BuildingSpecs.Configure`), so a run with differing economy rates must be its **own
 process** — do not attempt to boot two hosts with different `Economy` values in one process.
 
 ## Example: a deterministic, rich-in-5-minutes profile

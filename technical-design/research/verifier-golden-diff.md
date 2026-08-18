@@ -45,7 +45,7 @@ The domain math is already deterministic. `ResourcePool.GetCurrentValue(now)` an
 There is exactly one stray `DateTimeOffset.UtcNow` in the whole API assembly, and it is auth
 metadata, not game logic: `Documents/ApiKey.cs:8`. Verified:
 
-```
+```text
 $ grep -rn "DateTime.UtcNow\|DateTimeOffset.UtcNow" src/Voidforge.Api --include=*.cs
 src/Voidforge.Api/Documents/ApiKey.cs:8:    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 ```
@@ -129,7 +129,7 @@ The verifier must **become the scheduler**:
    scheduled-job poller never starts (e.g. `DurabilityMode.MediatorOnly`, or a verifier host that
    omits the agent), configured by the same `Verifier__Enabled` flag. (architecture.md:318 notes the
    poll interval is "Configurable via `opts.Durability.ScheduledJobPollingTime`" — the exact
-   agent-off knob is an implementation detail to confirm; see [§8](#8-open-questions--decisions).)
+   agent-off knob is an implementation detail to confirm; see [§8](#8-open-questions--decisions-for-the-team).)
 2. **Maintain a single-threaded priority queue** of due events keyed by
    `(effectiveInstant, deterministicTieBreak)`. After each scripted command commits, sweep the
    newly-persisted scheduled messages into this queue and remove them from the outbox so nothing
@@ -160,6 +160,16 @@ floor* — that is soak-run territory.)
 
 ### 2.3 Seeded world generation and deterministic IDs
 
+> **Implemented on this branch (since this research was written).** The world-generation determinism
+> analyzed here has since landed: `WorldGenOptions.Seed` (a nullable `int`) drives a seeded PRNG in
+> `WorldSeeder.BuildWorld`, so planet/system **coordinates and ids** are reproducible in a fixed order;
+> and `PlayerEndpoints` now orders the homeworld-candidate query by id (`OrderBy(p => p.Id)`) and, when
+> seeded, claims the lowest-id planet (`SelectHomeworld`). When `Seed` is null the original
+> nondeterministic behavior is preserved. Command-path ids (player/ship/fleet) are still
+> `Guid.NewGuid()`. The proposal text below is retained as the original research record; the clock seam
+> ([§2.1](#21-a-controllable-clock)), durability-agent gating, and the event drainer
+> ([§2.2](#22-verifier-ownership-of-the-event-schedule)) remain unimplemented future work.
+
 World gen is the largest entropy source, and it poisons everything downstream: coordinates set travel
 distances (`Travel/LinearTravelPlanner.cs:19-25`), which set arrival instants, which set the entire
 event timeline. The full entropy ledger, verified:
@@ -180,18 +190,18 @@ event timeline. The full entropy ledger, verified:
 
 To make raw snapshots diff (variant A), each must be made a function of the seed:
 
-- **Seeded RNG in `WorldSeeder`.** `WorldGenOptions` has no seed field today (`WorldGenOptions.cs:1-15`).
-  Add `int Seed`, construct `new Random(opts.Seed)` at `WorldSeeder.cs:57`, and the coordinate stream
-  (`NextCoordinate`, `:96-99`) becomes reproducible.
-- **Deterministic ids from `(seed, index)`.** Replace `Guid.NewGuid()` at the seeding sites with a
-  deterministic derivation — e.g. a name-based UUIDv5 from a fixed namespace over `"system:{s}"` /
-  `"planet:{s}-{p}"`, or a hash of `(seed, kind, index)`. The command-path ids
-  (`PlayerEndpoints.cs:50`, `ShipEndpoints.cs:45`, `FleetEndpoints.cs:152`) similarly derive from a
-  per-run counter seeded by the script.
-- **Deterministic homeworld selection.** The query at `PlayerEndpoints.cs:108-111` has no `OrderBy`,
-  so its row order is not stable even before the random pick at `:118`. Add a deterministic
-  `OrderBy(p => p.Id)` (or planet name) and replace `Random.Shared.Next` with a seeded pick, so the
-  same registration in the same world always claims the same homeworld.
+- **Seeded RNG in `WorldSeeder`.** *Landed:* `WorldGenOptions.Seed` (nullable `int`) feeds
+  `new Random(opts.Seed)` in `WorldSeeder.BuildWorld`, so the coordinate stream (`NextCoordinate`)
+  is reproducible whenever a seed is set.
+- **Deterministic ids from `(seed, index)`.** *Landed for world-gen ids:* `WorldSeeder.NextId` fills 16
+  bytes from the seeded PRNG in a fixed order, so system/planet ids are reproducible per seed (the bytes
+  need not form an RFC-valid Guid — Marten only needs a stable key). The command-path ids
+  (`PlayerEndpoints` player id, `ShipEndpoints` build id, `FleetEndpoints` fleet id) are **not** seeded
+  and remain `Guid.NewGuid()`; variant B normalizes them rather than deriving them.
+- **Deterministic homeworld selection.** *Landed:* the candidate query now orders by id
+  (`OrderBy(p => p.Id)`) for a stable row order, and `SelectHomeworld` claims the lowest-id planet when a
+  seed is set (falling back to `Random.Shared.Next` unseeded), so the same registration in the same
+  seeded world always claims the same homeworld.
 
 **The one random-id leak into game logic:** `Fleet.ConsumeColonyShip` tie-breaks
 `.OrderBy(s => s.CompletedAt).ThenBy(s => s.Id)` (`Domain/Fleet.cs:252-256`). The Guid tie-break only
