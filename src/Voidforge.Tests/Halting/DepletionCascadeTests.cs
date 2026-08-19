@@ -82,6 +82,44 @@ public sealed class DepletionCascadeTests
         Assert.Equal(HaltReason.ResourceDepleted, drillFinal.HaltReason);
     }
 
+    // Regression (depletion→InputStarved scheduling gap): the test above proves the DOMAIN logic by
+    // manually invoking CheckInputStarvedHandler as step 2 — but in production nothing invokes it unless
+    // CheckPoolDepletedHandler SCHEDULES it. This asserts exactly that: after depletion halts the Drill and
+    // the ore buffer starts draining, the handler must schedule a CheckInputStarved for the planet so the
+    // refinery-starvation leg self-drives (without it, the refinery stays Operational forever and ingots
+    // fabricate from an empty buffer). Captured via a TestMessageContext (no running Wolverine runtime).
+    [Fact]
+    public async Task DepletionSchedulesTheDownstreamRefineryStarvationCheck()
+    {
+        var registration = await _host.RegisterPlayer("DepletionArmsStarve_");
+        var planetId = registration.HomeworldId;
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+
+        var seeded = await FetchPlanet(store, planetId);
+        var depletion = seeded.PredictDepletionDeadline(seeded.IronOreDeposit.CheckpointTime);
+        Assert.NotNull(depletion);
+        var message = new CheckPoolDepleted(planetId, depletion.At);
+
+        // TestMessageContext records everything the handler sends/schedules; use it as the bus while a real
+        // Marten session backs the handler's FetchForWriting / SaveChanges.
+        var context = new TestMessageContext(message);
+        await using (var session = store.LightweightSession())
+        {
+            await CheckPoolDepletedHandler.Handle(message, session, context);
+        }
+
+        // AllOutgoing records scheduled messages as Wolverine Envelopes — unwrap to the payload messages.
+        var scheduled = context.AllOutgoing
+            .Select(o => o is Envelope env ? env.Message : o)
+            .ToList();
+
+        // The Drill halted (deposit empty) → the buffer is now draining → a CheckInputStarved for THIS
+        // planet must have been scheduled so the refinery eventually halts InputStarved on its own.
+        Assert.Contains(scheduled.OfType<CheckInputStarved>(), m => m.PlanetId == planetId);
+        // Depletion is terminal — no further CheckPoolDepleted is armed for this planet.
+        Assert.DoesNotContain(scheduled.OfType<CheckPoolDepleted>(), m => m.PlanetId == planetId);
+    }
+
     private static async Task<Planet> FetchPlanet(IDocumentStore store, Guid planetId)
     {
         await using var session = store.LightweightSession();
