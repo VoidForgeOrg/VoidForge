@@ -44,7 +44,7 @@ public static class Tier2Baseline
         {
             baseline = JsonSerializer.Deserialize<SoakBaseline>(File.ReadAllText(path), _json);
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return Tier2Report.SkippedReport($"baseline at {path} could not be read: {ex.Message}");
         }
