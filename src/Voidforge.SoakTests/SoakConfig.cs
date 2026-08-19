@@ -24,6 +24,10 @@ public static class SoakConfig
     // The Tier-1 invariants hold at every instant regardless of window, so 120s is fine for the skeleton.
     public static int WindowSeconds => ReadWindowSeconds();
 
+    // Emit mode: when set, the test logs its computed SoakAggregates as one grep-able marker line
+    // (SoakBaselineEmitter) so the N-run blessing envelope can be built from machine-readable output.
+    public static bool EmitBaseline => ReadFlag("SOAK_EMIT_BASELINE");
+
     public static void ApplyEnvironmentOverrides()
     {
         // Set the connection string before AlbaHost.For<Program>() so the host binds it via `__` -> `:`
@@ -75,5 +79,13 @@ public static class SoakConfig
         return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds) && seconds > 0
             ? seconds
             : _defaultWindowSeconds;
+    }
+
+    // A plain on/off env flag: "1" or "true" (case-insensitive) enables it; anything else (unset included)
+    // is off. Deliberately not culture- or number-parsed — it is a switch, not a value.
+    private static bool ReadFlag(string name)
+    {
+        var raw = Environment.GetEnvironmentVariable(name);
+        return raw is "1" || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -10,10 +10,10 @@ namespace Voidforge.SoakTests;
 public static class SoakReport
 {
     public static string Render(
-        WorldSnapshot s, Tier1Report tier1, Tier3Report tier3, ScoreCalculator scoreCalculator, IReadOnlyList<string> legEvents)
+        WorldSnapshot s, Tier1Report tier1, Tier2Report tier2, Tier3Report tier3, ScoreCalculator scoreCalculator, IReadOnlyList<string> legEvents)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("=== Voidforge Soak Report (Tier 1 + Tier 3) ===");
+        sb.AppendLine("=== Voidforge Soak Report (Tier 1 + Tier 2 + Tier 3) ===");
         Emit(sb, $"Snapshot instant : {s.Now}");
         Emit(sb, $"Planets {s.Planets.Count}  Fleets {s.Fleets.Count}  Players {s.Players.Count}");
         Emit(sb, $"Dead letters     : {s.DeadLetterCount}");
@@ -23,6 +23,8 @@ public static class SoakReport
         AppendInvariants(sb, tier1);
         sb.AppendLine();
         AppendOutcomes(sb, tier3);
+        sb.AppendLine();
+        AppendBaseline(sb, tier2);
         sb.AppendLine();
         AppendOreMined(sb, s);
         sb.AppendLine();
@@ -73,6 +75,32 @@ public static class SoakReport
             Emit(sb, $"  [{tag}] {result.Id} {result.Title} - {result.Detail}");
         }
     }
+
+    // Tier-2 baseline matrix: [BAND]/[WARN] per metric, or a single [SKIP] line when no baseline is
+    // committed / the window does not match. Advisory only — a [WARN] never fails the run.
+    private static void AppendBaseline(StringBuilder sb, Tier2Report report)
+    {
+        sb.AppendLine("Baseline comparison (Tier 2, advisory):");
+        if (report.Skipped)
+        {
+            Emit(sb, $"  [SKIP] {report.SkipReason}");
+            return;
+        }
+
+        foreach (var r in report.Results)
+        {
+            var tag = r.Status == Tier2Status.WithinBand ? "BAND" : "WARN";
+            Emit(sb, $"  [{tag}] {r.Id}: observed {r.Observed} vs expected {r.Expected} {FormatBand(r)}");
+        }
+    }
+
+    private static string FormatBand(Tier2Result r) =>
+        r.Kind switch
+        {
+            Tier2ToleranceKind.CountMin => FormattableString.Invariant($">={r.Expected}"),
+            Tier2ToleranceKind.Scalar => FormattableString.Invariant($"±{r.Tolerance}%"),
+            _ => FormattableString.Invariant($"±{r.Tolerance}"),
+        };
 
     private static void AppendOreMined(StringBuilder sb, WorldSnapshot s)
     {
