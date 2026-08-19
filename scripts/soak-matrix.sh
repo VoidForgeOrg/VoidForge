@@ -15,7 +15,7 @@
 # Requires Postgres up (bash .claude/start-infra.sh). Exit code is non-zero if ANY scenario fails.
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 PROJECT="src/Voidforge.SoakTests/Voidforge.SoakTests.csproj"
 

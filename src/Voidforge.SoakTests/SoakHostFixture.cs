@@ -49,7 +49,10 @@ public abstract class SoakHostFixture : IAsyncLifetime
 
         // Wire the connection (this scenario's DB) and the scenario theme via env vars BEFORE the host
         // boots — the WithWebHostBuilder-avoiding path. ApplyConfig sets ONLY the theme, never the
-        // connection string, so this ordering is the single place the DB is bound.
+        // connection string, so this ordering is the single place the DB is bound. ResetThemeEnv first
+        // clears any prior scenario's theme keys, so a direct `dotnet test` running both soak collections
+        // serially in one process is order-independent (see SoakConfig.ResetThemeEnv).
+        SoakConfig.ResetThemeEnv();
         SoakConfig.SetEnv("ConnectionStrings__Marten", connStr);
         Scenario.ApplyConfig();
 

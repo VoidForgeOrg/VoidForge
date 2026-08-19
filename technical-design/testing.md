@@ -60,7 +60,7 @@ Every test class carries exactly one xUnit trait: `[Trait("Category", "Unit")]` 
 
 New test classes MUST be tagged — an untagged class silently runs in neither filtered lane.
 
-The out-of-solution `Voidforge.SoakTests` project is the sole exception to the Unit/Integration rule: its `TwoUserEconomySoakTests` is tagged `[Trait("Category", "Soak")]` (see the Soak lane below).
+The out-of-solution `Voidforge.SoakTests` project is the sole exception to the Unit/Integration rule: every soak test class (e.g. `TwoUserEconomySoakTests`, `InputStarvationSoakTests`) is tagged `[Trait("Category", "Soak")]` (see the Soak lane below).
 
 ### Soak lane (`src/Voidforge.SoakTests/`, out of the solution)
 

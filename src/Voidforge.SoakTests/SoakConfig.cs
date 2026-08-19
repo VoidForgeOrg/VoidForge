@@ -39,6 +39,26 @@ public static class SoakConfig
 
     public static void SetEnv(string key, string value) => Environment.SetEnvironmentVariable(key, value);
 
+    // Scenario themes set keys under these config prefixes (each scenario's ApplyConfig). Env vars are
+    // process-global, so a direct `dotnet test` running multiple soak collections serially in ONE process
+    // would otherwise let a scenario inherit the PRIOR scenario's theme keys (e.g. two-user's IronOrePool
+    // leaking into input-starvation), making results depend on scenario order. Clearing these prefixes
+    // before each in-process boot gives every scenario a clean slate. (The matrix runner already isolates
+    // via separate processes; this makes the single-process path order-independent too.) The connection
+    // string and log levels are re-set on every boot, so they never bleed and are not cleared here.
+    private static readonly string[] _themePrefixes = ["WorldGeneration__", "Balance__"];
+
+    public static void ResetThemeEnv()
+    {
+        foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<string>().ToList())
+        {
+            if (_themePrefixes.Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                Environment.SetEnvironmentVariable(key, null);
+            }
+        }
+    }
+
     // Silence the per-SQL Debug/Info logging the Development environment defaults switch on, so a long soak
     // run does not bury real failures in log noise. Every scenario's ApplyConfig calls this.
     public static void PinLogLevels()
