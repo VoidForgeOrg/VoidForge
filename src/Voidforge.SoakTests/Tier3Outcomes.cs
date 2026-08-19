@@ -94,12 +94,45 @@ public static class Tier3Outcomes
             return Skipped("O5", "depletion fired");
         }
 
-        var seriesHitZero = s.DepositSeries.SelectMany(snap => snap.Deposits.Values).Any(v => v <= 0m);
-        var finalHitZero = s.Planets.Any(p => p.IronOreDeposit.GetCurrentValue(s.Now) <= 0m);
-        var depleted = seriesHitZero || finalHitZero;
+        // Require an observed POSITIVE-then-ZERO transition, not merely a zero: a deposit empty from the
+        // start (or a planet created empty) must not count as "the run depleted it". The series is
+        // time-ordered; the final snapshot is appended as the last observation.
+        var timeline = s.DepositSeries
+            .OrderBy(snap => snap.At)
+            .Select(snap => snap.Deposits)
+            .Append(s.Planets.ToDictionary(p => p.Id, p => p.IronOreDeposit.GetCurrentValue(s.Now)))
+            .ToList();
+
+        var depletedPlanet = FindDepletedPlanet(timeline);
         return Threshold(
-            "O5", "depletion fired", depleted,
-            depleted ? "a deposit reached 0" : "no deposit reached 0 during the run");
+            "O5", "depletion fired", depletedPlanet is not null,
+            depletedPlanet is not null
+                ? $"deposit on planet {depletedPlanet} went positive -> 0 during the run"
+                : "no deposit was observed going from positive to 0");
+    }
+
+    // The first planet whose deposit was observed strictly positive and then, at a LATER observation, at
+    // 0 — the signature of a depletion that actually happened during the run (deposits clamp to [0, cap],
+    // so a non-positive value is exactly 0).
+    private static Guid? FindDepletedPlanet(List<IReadOnlyDictionary<Guid, decimal>> timeline)
+    {
+        var sawPositive = new HashSet<Guid>();
+        foreach (var frame in timeline)
+        {
+            foreach (var (planetId, value) in frame)
+            {
+                if (value > 0m)
+                {
+                    sawPositive.Add(planetId);
+                }
+                else if (sawPositive.Contains(planetId))
+                {
+                    return planetId;
+                }
+            }
+        }
+
+        return null;
     }
 
     // O6 (window-gated): both halt cascades were observed — a ResourceDepleted halt (A's drills on the

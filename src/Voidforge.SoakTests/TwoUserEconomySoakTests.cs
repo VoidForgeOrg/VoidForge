@@ -39,9 +39,9 @@ public sealed class TwoUserEconomySoakTests
         var store = _fixture.Store;
 
         var driver = new SoakDriver(host, store);
+        // RunAsync now drains the scheduler internally (with the snapshot loop still capturing halts),
+        // so the world is quiesced by the time it returns and drain-phase halts reach Tier 3's O6.
         var driverResult = await driver.RunAsync(TimeSpan.FromSeconds(SoakConfig.WindowSeconds), _output.WriteLine);
-
-        await SchedulerQuiescence.DrainAsync(store, _output.WriteLine);
 
         var now = TimeProvider.System.GetUtcNow();
         var snapshot = await SoakSnapshotReader.ReadAuthoritativeAsync(
