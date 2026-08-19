@@ -32,20 +32,38 @@ public static class CheckPoolDepletedHandler
         await session.SaveChangesAsync();
 
         // Reschedule from the FRESH post-commit aggregate (FetchLatest), same rationale as
-        // CheckStorageFullHandler: AppendMany does not re-apply events to stream.Aggregate. After a
-        // real depletion every Drill is Halted → oreInflow 0 → the deposit's drain Rate 0 →
-        // PredictDepletionDeadline returns null (no reschedule — depletion is terminal). A superseded
-        // no-op reschedules the single next predicted empty instant, keeping the chain linear.
+        // CheckStorageFullHandler: AppendMany does not re-apply events to stream.Aggregate, so its rates
+        // would still be the pre-halt ones.
         var updated = await session.Events.FetchLatest<Planet>(message.PlanetId);
         if (updated is null)
         {
             return;
         }
 
-        var deadline = updated.PredictDepletionDeadline(message.PredictedAt);
-        if (deadline is not null)
+        if (events.Count > 0)
         {
-            await bus.ScheduleAsync(new CheckPoolDepleted(message.PlanetId, deadline.At), deadline.At);
+            // A real depletion just halted the Drill(s) — a rate-changing mutation: oreInflow drops to 0 and
+            // the still-Operational Refinery now drains the stored ore buffer. Arm the WHOLE downstream
+            // cascade from the fresh aggregate, exactly as a mutation site (Place/Queue/Complete*) would, so
+            // the depletion → drill-halt → refinery-InputStarved → build-halt chain fires in production
+            // without a wall clock. Self-guarded and fan-out-free: after a real depletion
+            // PredictDepletionDeadline is null (depletion is terminal, no CheckPoolDepleted re-arm), and the
+            // storage/buffer predicts only schedule when genuinely filling/draining — so this arms the
+            // now-draining buffer's CheckInputStarved and nothing spurious. Previously only CheckPoolDepleted
+            // was rescheduled here, so the refinery-starvation leg was NEVER armed off the depletion path:
+            // the refinery stayed Operational forever and EvaluateOreBufferEmptied never re-clamped the rate,
+            // fabricating ingots from an empty buffer.
+            await StorageHaltScheduling.ScheduleAllChecksAsync(bus, message.PlanetId, updated, message.PredictedAt);
+        }
+        else
+        {
+            // Superseded no-op (deposit not actually empty, or no operational Drill left): keep the chain
+            // linear by rescheduling only the single next predicted empty instant.
+            var deadline = updated.PredictDepletionDeadline(message.PredictedAt);
+            if (deadline is not null)
+            {
+                await bus.ScheduleAsync(new CheckPoolDepleted(message.PlanetId, deadline.At), deadline.At);
+            }
         }
     }
 }
