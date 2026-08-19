@@ -9,6 +9,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Copy the blessed Tier-2 baseline to the output dir so Tier2Baseline can load it from
+         AppContext.BaseDirectory. A glob (not an explicit filename) so the project still builds cleanly
+         BEFORE blessing, when no baseline is committed yet — then picks the file up once it lands. -->
+    <Content Include="baselines/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Voidforge.Api/Voidforge.Api.csproj" />
     <ProjectReference Include="../Voidforge.Tests/Voidforge.Tests.csproj" />
   </ItemGroup>

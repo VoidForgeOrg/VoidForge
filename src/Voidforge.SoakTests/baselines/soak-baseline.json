@@ -1,0 +1,33 @@
+{
+  "scenarioId": "two-user-economy-v1",
+  "windowSeconds": 300,
+  "config": {
+    "WorldGeneration__IronOrePool": "4000",
+    "WorldGeneration__IronIngotStorageCapacity": "2500",
+    "WorldGeneration__StartingIronOre": "2000",
+    "WorldGeneration__StartingIronIngots": "800",
+    "WorldGeneration__SolarSystemCount": "40",
+    "Balance__Drill__BuildDurationSeconds": "20",
+    "Balance__Refinery__BuildDurationSeconds": "20",
+    "Balance__Generator__BuildDurationSeconds": "20",
+    "Balance__Shipyard__BuildDurationSeconds": "20",
+    "Balance__ColonyShip__BuildDurationSeconds": "15",
+    "Balance__CargoVessel__BuildDurationSeconds": "15",
+    "Balance__ColonyShip__IngotCost": "60",
+    "Balance__CargoVessel__IngotCost": "60",
+    "Balance__Ships__ColonyShip__SpeedPerSecond": "100",
+    "Balance__Ships__CargoVessel__SpeedPerSecond": "100"
+  },
+  "tolerances": {
+    "scorePct": 10,
+    "countAbs": 1,
+    "oreEpsilon": 150
+  },
+  "expected": {
+    "oreMinedTotal": { "value": 7170, "kind": "exact-ish", "tol": "oreEpsilon" },
+    "planetsColonized": { "value": 1, "kind": "count", "tol": "countAbs" },
+    "shipsProduced": { "value": 4, "kind": "count", "tol": "countAbs" },
+    "haltReasonsSeen": { "value": 2, "kind": "count-min", "tol": "countAbs" },
+    "playerScoreMax": { "value": 10052, "kind": "scalar", "tol": "scorePct" }
+  }
+}

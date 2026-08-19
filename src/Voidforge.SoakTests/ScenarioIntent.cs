@@ -17,6 +17,11 @@ public sealed record ScenarioIntent(
     decimal MinOreMined,
     int CascadeWindowSeconds)
 {
+    // Identifies this scenario theme. Stored in the Tier-2 baseline JSON and emitted by
+    // SoakBaselineEmitter so a blessed baseline is unambiguously tied to the scenario it was blessed for.
+    public const string ScenarioId = "two-user-economy-v1";
+
+
     // The two-user "own-colony supply line + depletion" scenario's intent. Thresholds are intentionally
     // conservative (Tier 3 must carry slack — it flags "the story didn't happen", never contention jitter).
     public static ScenarioIntent Default { get; } = new(

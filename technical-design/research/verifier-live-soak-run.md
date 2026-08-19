@@ -1,18 +1,27 @@
 # Verifier Research: Live Soak-Run Verifier
 
-> **Status:** Design + **v1 walking skeleton shipped**. This document is the design for the
-> verifier the team is **primarily** implementing; §2–§8 remain the target end-state.
+> **Status:** Design doc — **all three assertion tiers shipped** (Tier 1 #96, Tier 3 #98, Tier 2 #99).
+> §2–§8 are the design of record the shipped code follows; where the code refined a detail, the notes
+> below and the source under `src/Voidforge.SoakTests/` are authoritative.
 >
-> **v1 (shipped, `src/Voidforge.SoakTests/`):** a standalone `dotnet test` project — deliberately
+> **Shipped (`src/Voidforge.SoakTests/`):** a standalone `dotnet test` project — deliberately
 > **not** in `src/Voidforge.slnx`, so no CI lane or Stop-hook runs it — that boots the real host
 > against an isolated auto-created `voidforge_soak_test` DB with the §8.2 theme config, drives the
 > two-user scenario over real HTTP for a bounded window (`SOAK_WINDOW_SECONDS`, default 120),
-> drains via **aggregate-quiesce + settle-cap**, snapshots via Marten, and asserts **Tier 1
-> (I1–I11)**. Run: `SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj`.
-> Validated: a 90 s and a 300 s run each pass all 11 invariants; the run genuinely exercised
-> parallel Planet-stream appends (observed `23505` optimistic-concurrency collisions absorbed by the
-> retry ladder — I3 dead-letters empty, I5 clean). **Deferred to follow-ups:** Tier 2 baselines +
-> blessing, Tier 3 structural outcomes, envelope-based drain, CI gating, multi-theme matrix.
+> drains via **aggregate-quiesce + settle-cap**, snapshots via Marten, and asserts:
+> - **Tier 1 (I1–I11)** — invariants, hard-assert (#96).
+> - **Tier 3 (O1–O6)** — structural outcomes, hard-assert; O4–O6 window-gated at `>= 300s` (#98).
+> - **Tier 2 (baselines & blessing)** — aggregate comparison vs a **blessed baseline**
+>   (`baselines/soak-baseline.json`) within per-metric tolerances, rendered as a `[BAND]`/`[WARN]`
+>   matrix. **Advisory only — never fails the test** (§2/§7.3); `SOAK_EMIT_BASELINE=1` emits the
+>   machine-readable aggregates that feed the N-run blessing envelope. Blessed with N=5 × 300s runs.
+>
+> Run: `SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj`.
+> Validated: 90 s / 300 s runs pass all 11 invariants; the run genuinely exercised parallel
+> Planet-stream appends (observed `23505` optimistic-concurrency collisions absorbed by the retry
+> ladder — I3 dead-letters empty, I5 clean). **Deferred to follow-ups:** nightly CI/soak lane +
+> dedicated DB, envelope-based drain, multi-theme matrix, the golden-diff sibling, and converging
+> Tier 3 onto the shared `SoakAggregates` (once a CI net exists).
 >
 > **Two findings from v1 (acted on):**
 > 1. **Transport is own-planets-only, so §8.2's A→B lifeline was infeasible — the scenario was

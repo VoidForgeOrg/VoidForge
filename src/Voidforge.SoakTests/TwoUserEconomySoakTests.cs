@@ -54,9 +54,21 @@ public sealed class TwoUserEconomySoakTests
         var tier1 = Tier1Invariants.Evaluate(snapshot, capacityOf, _overdueMargin);
         var tier3 = Tier3Outcomes.Evaluate(snapshot, ScenarioIntent.Default, SoakConfig.WindowSeconds);
 
+        // Tier 2 is advisory: compute the run aggregates and compare them to the blessed baseline (skipped
+        // when none is committed or the window does not match). It NEVER asserts — only Tier 1 and Tier 3
+        // hard-fail the run.
+        var aggregates = SoakAggregates.Compute(snapshot, scoreCalculator);
+        var tier2 = Tier2Baseline.EvaluateOrSkip(aggregates, ScenarioIntent.ScenarioId, SoakConfig.WindowSeconds);
+
         // Render the full report BEFORE asserting, so the per-tier matrices reach the test output even
         // when an assertion below fails the run.
-        _output.WriteLine(SoakReport.Render(snapshot, tier1, tier3, scoreCalculator, driverResult.Events));
+        _output.WriteLine(SoakReport.Render(snapshot, tier1, tier2, tier3, scoreCalculator, driverResult.Events));
+
+        // Emit mode: log the machine-readable aggregates for the N-run blessing envelope (§6).
+        if (SoakConfig.EmitBaseline)
+        {
+            SoakBaselineEmitter.Emit(aggregates, SoakConfig.WindowSeconds, _output.WriteLine);
+        }
 
         Tier1Invariants.AssertAll(tier1);
         Tier3Outcomes.AssertAll(tier3);
