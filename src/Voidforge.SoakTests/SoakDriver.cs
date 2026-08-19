@@ -32,7 +32,7 @@ public sealed class SoakDriver
         var homeB = await _host.GetPlanetById(regB, regB.HomeworldId);
 
         using var snapshotCts = new CancellationTokenSource();
-        var snapshotLoop = CaptureDepositSnapshotsAsync(recorder, deadline, snapshotCts.Token);
+        var snapshotLoop = CaptureSnapshotsAsync(recorder, snapshotCts.Token);
 
         try
         {
@@ -43,11 +43,17 @@ public sealed class SoakDriver
             await Task.WhenAll(scriptA, scriptB);
 
             // Keep the window open so the real scheduler can fire the arrivals / ship completions the
-            // scripts triggered, with the deposit-snapshot loop still running.
+            // scripts triggered, with the snapshot loop still running.
             while (!deadline.Reached)
             {
                 await Task.Delay(SoakTimeouts.LegPause);
             }
+
+            // Drain the scheduler with the snapshot loop STILL capturing, so a halt that a scheduled
+            // event creates and then clears DURING the drain is still observed for Tier 3's O6 — a
+            // loop stopped before drain, plus an already-cleared halt at the final read, would otherwise
+            // hide a cascade that genuinely fired.
+            await SchedulerQuiescence.DrainAsync(_store, log);
         }
         finally
         {
@@ -58,13 +64,15 @@ public sealed class SoakDriver
         }
 
         log?.Invoke(
-            $"Driver recorded {recorder.Statuses.Count} raced status(es), {recorder.Snapshots.Count} deposit snapshot(s), {recorder.Events.Count} leg event(s).");
+            $"Driver recorded {recorder.Statuses.Count} raced status(es), {recorder.Snapshots.Count} snapshot(s), {recorder.Events.Count} leg event(s).");
         return new SoakDriverResult(recorder.Statuses, recorder.Snapshots, recorder.Events);
     }
 
-    private async Task CaptureDepositSnapshotsAsync(SoakRecorder recorder, Deadline deadline, CancellationToken token)
+    // Runs from just after registration until cancelled in RunAsync's finally — spanning BOTH the drive
+    // window AND the scheduler drain, so no halt O6 relies on falls in an unobserved gap.
+    private async Task CaptureSnapshotsAsync(SoakRecorder recorder, CancellationToken token)
     {
-        while (!token.IsCancellationRequested && !deadline.Reached)
+        while (!token.IsCancellationRequested)
         {
             await CaptureOneAsync(recorder);
             await DelayQuietly(SoakTimeouts.IntermediateSnapshotInterval, token);
@@ -77,7 +85,16 @@ public sealed class SoakDriver
         await using var session = _store.LightweightSession();
         var planets = await session.Query<Planet>().ToListAsync();
         var deposits = planets.ToDictionary(p => p.Id, p => p.IronOreDeposit.GetCurrentValue(now));
-        recorder.RecordSnapshot(new IntermediateSnapshot(now, deposits));
+
+        // From the SAME query, capture any building halts live at this instant (no extra round-trip),
+        // so Tier 3's O6 sees transient cascades the single post-drain snapshot could miss.
+        var halts = planets
+            .SelectMany(p => p.Buildings
+                .Where(b => b.HaltReason is not null)
+                .Select(b => new HaltObservation(p.Id, b.HaltReason!.Value)))
+            .ToList();
+
+        recorder.RecordSnapshot(new IntermediateSnapshot(now, deposits, halts));
     }
 
     private static async Task DelayQuietly(TimeSpan delay, CancellationToken token)
