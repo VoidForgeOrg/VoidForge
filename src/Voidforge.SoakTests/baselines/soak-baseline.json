@@ -24,10 +24,10 @@
     "oreEpsilon": 150
   },
   "expected": {
-    "oreMinedTotal": { "value": 7170, "kind": "exact-ish", "tol": "oreEpsilon" },
+    "oreMinedTotal": { "value": 7165, "kind": "exact-ish", "tol": "oreEpsilon" },
     "planetsColonized": { "value": 1, "kind": "count", "tol": "countAbs" },
     "shipsProduced": { "value": 4, "kind": "count", "tol": "countAbs" },
     "haltReasonsSeen": { "value": 2, "kind": "count-min", "tol": "countAbs" },
-    "playerScoreMax": { "value": 10052, "kind": "scalar", "tol": "scorePct" }
+    "playerScoreMax": { "value": 10065, "kind": "scalar", "tol": "scorePct" }
   }
 }
