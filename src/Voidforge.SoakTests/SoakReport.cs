@@ -10,17 +10,19 @@ namespace Voidforge.SoakTests;
 public static class SoakReport
 {
     public static string Render(
-        WorldSnapshot s, Tier1Report report, ScoreCalculator scoreCalculator, IReadOnlyList<string> legEvents)
+        WorldSnapshot s, Tier1Report tier1, Tier3Report tier3, ScoreCalculator scoreCalculator, IReadOnlyList<string> legEvents)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("=== Voidforge Soak Report (Tier 1) ===");
+        sb.AppendLine("=== Voidforge Soak Report (Tier 1 + Tier 3) ===");
         Emit(sb, $"Snapshot instant : {s.Now}");
         Emit(sb, $"Planets {s.Planets.Count}  Fleets {s.Fleets.Count}  Players {s.Players.Count}");
         Emit(sb, $"Dead letters     : {s.DeadLetterCount}");
         Emit(sb, $"Raced statuses   : {FormatStatuses(s.HttpStatuses)}");
         Emit(sb, $"Deposit snapshots: {s.DepositSeries.Count}");
         sb.AppendLine();
-        AppendInvariants(sb, report);
+        AppendInvariants(sb, tier1);
+        sb.AppendLine();
+        AppendOutcomes(sb, tier3);
         sb.AppendLine();
         AppendOreMined(sb, s);
         sb.AppendLine();
@@ -54,6 +56,21 @@ public static class SoakReport
             {
                 Emit(sb, $"         - {violation}");
             }
+        }
+    }
+
+    private static void AppendOutcomes(StringBuilder sb, Tier3Report report)
+    {
+        sb.AppendLine("Structural outcomes (Tier 3):");
+        foreach (var result in report.Results)
+        {
+            var tag = result.Status switch
+            {
+                OutcomeStatus.Passed => "PASS",
+                OutcomeStatus.Failed => "FAIL",
+                _ => "SKIP",
+            };
+            Emit(sb, $"  [{tag}] {result.Id} {result.Title} - {result.Detail}");
         }
     }
 

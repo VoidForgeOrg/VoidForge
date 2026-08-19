@@ -77,7 +77,16 @@ public sealed class SoakDriver
         await using var session = _store.LightweightSession();
         var planets = await session.Query<Planet>().ToListAsync();
         var deposits = planets.ToDictionary(p => p.Id, p => p.IronOreDeposit.GetCurrentValue(now));
-        recorder.RecordSnapshot(new IntermediateSnapshot(now, deposits));
+
+        // From the SAME query, capture any building halts live at this instant (no extra round-trip),
+        // so Tier 3's O6 sees transient cascades the single post-drain snapshot could miss.
+        var halts = planets
+            .SelectMany(p => p.Buildings
+                .Where(b => b.HaltReason is not null)
+                .Select(b => new HaltObservation(p.Id, b.HaltReason!.Value)))
+            .ToList();
+
+        recorder.RecordSnapshot(new IntermediateSnapshot(now, deposits, halts));
     }
 
     private static async Task DelayQuietly(TimeSpan delay, CancellationToken token)
