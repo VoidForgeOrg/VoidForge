@@ -9,13 +9,16 @@
 > `baselines/*.json` **glob** (not an explicit filename) so the project builds cleanly before blessing.
 > The kept-open follow-ups are unchanged (see §10).
 >
-> **For the next agent.** Tier 1 (invariants) and Tier 3 (structural outcomes) are shipped and on
-> `main`. This is the handover to build **Tier 2 — tolerance comparison vs a blessed baseline**, the
-> last of the three assertion tiers. Read this end-to-end before coding; it is written to be executable.
+> **This document is the design-time handover brief, preserved as provenance.** Everything below §1 was
+> written to hand the *unbuilt* Tier 2 to the next agent, so it reads in the future/imperative tense
+> ("proposed design", "suggested first steps"). Tier 2 is now shipped (#99) along these lines — read the
+> prose below as the plan of record, and the ✅ DONE note above plus the code under
+> `src/Voidforge.SoakTests/` as the authoritative shipped state where the two differ. One contract the
+> code refined vs. the plan: runtime compatibility is gated on `scenarioId` + `windowSeconds`; the
+> `config` block is recorded as re-bless provenance, not machine-compared (see §6 and `SoakBaseline`).
 >
 > **Design source of truth:** `technical-design/research/verifier-live-soak-run.md` — §2 "Tier 2",
-> §3 "Baseline Recording & Blessing", §6 "Nondeterminism Ledger", §7.3 "Flakiness control", and the
-> open questions §9 (#2, #3, #4, #8) all bear directly on this work.
+> §3 "Baseline Recording & Blessing", §6 "Nondeterminism Ledger", §7.3 "Flakiness control", §9 (#2–#4, #8).
 
 ## 1. Where things stand
 
@@ -180,7 +183,11 @@ new bookkeeping. Start Tier 2 with the counts + score + ore, which are all alrea
   **legit game change**: re-bless as part of that PR; the baseline diff is reviewable evidence.
 - A Tier-2 drift with **no** such change is a **regression candidate** — investigate, do **not** re-bless
   to make it green. That is how a baseline silently absorbs a bug.
-- The baseline is keyed by `scenarioId` **and** the embedded `config` block **and** `windowSeconds`.
+- The baseline is keyed at compare time by `scenarioId` **and** `windowSeconds` — `EvaluateOrSkip` SKIPs
+  a run whose scenario or window does not match. The embedded `config` block is recorded as re-bless
+  provenance (§3.3), **not** machine-compared: reproducing and diffing the full env theme is an
+  error-prone heavy lift unjustified for an advisory tier, and a config change that moves the numbers
+  surfaces as a WARN the reviewer re-blesses.
 
 ## 7. Open decisions (from design §9)
 

@@ -26,7 +26,12 @@ public static class Tier2Baseline
         "playerScoreMax",
     ];
 
-    public static Tier2Report EvaluateOrSkip(SoakAggregates actual, int windowSeconds)
+    // Loads the committed baseline and compares against it, or SKIPs. Every load failure — file absent,
+    // unreadable, malformed/truncated JSON, a null deserialization, or a missing required block — becomes a
+    // SKIP, never a throw: Tier 2 is advisory (§2/§7.3), so a bad baseline must not fail the xUnit run
+    // before Tier 1/Tier 3 render. Compatibility is gated on ScenarioId + WindowSeconds (the Config block is
+    // provenance only — see SoakBaseline); a mismatch on either SKIPs, mirroring Tier 3's window-gated SKIP.
+    public static Tier2Report EvaluateOrSkip(SoakAggregates actual, string scenarioId, int windowSeconds)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "baselines", "soak-baseline.json");
         if (!File.Exists(path))
@@ -34,8 +39,26 @@ public static class Tier2Baseline
             return Tier2Report.SkippedReport("no baseline committed — run SOAK_EMIT_BASELINE=1 at 300s to bless");
         }
 
-        var baseline = JsonSerializer.Deserialize<SoakBaseline>(File.ReadAllText(path), _json)
-            ?? throw new InvalidOperationException($"Baseline at {path} deserialized to null.");
+        SoakBaseline? baseline;
+        try
+        {
+            baseline = JsonSerializer.Deserialize<SoakBaseline>(File.ReadAllText(path), _json);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return Tier2Report.SkippedReport($"baseline at {path} could not be read: {ex.Message}");
+        }
+
+        if (baseline is null || baseline.Tolerances is null || baseline.Expected is null)
+        {
+            return Tier2Report.SkippedReport($"baseline at {path} is missing required 'tolerances'/'expected' blocks");
+        }
+
+        if (!string.Equals(baseline.ScenarioId, scenarioId, StringComparison.Ordinal))
+        {
+            return Tier2Report.SkippedReport(
+                $"baseline scenario '{baseline.ScenarioId}' != run scenario '{scenarioId}' (baselines are per theme)");
+        }
 
         if (baseline.WindowSeconds != windowSeconds)
         {
@@ -49,19 +72,35 @@ public static class Tier2Baseline
     public static Tier2Report Evaluate(SoakAggregates actual, SoakBaseline baseline)
     {
         var metrics = actual.ToMetrics();
+        var expected = baseline.Expected ?? new Dictionary<string, SoakBaselineMetric>(StringComparer.Ordinal);
+        var tolerances = baseline.Tolerances ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
         var results = new List<Tier2Result>();
         foreach (var id in _metricOrder)
         {
-            if (!metrics.TryGetValue(id, out var observed) ||
-                !baseline.Expected.TryGetValue(id, out var expected))
+            // Surface a gap as data rather than dropping the row: a silently-missing blessed metric would let
+            // AllWithinBand read "clean" while a metric was never compared.
+            if (!metrics.TryGetValue(id, out var observed) || !expected.TryGetValue(id, out var metric))
             {
+                results.Add(Tier2Result.Unresolved(id, $"metric '{id}' missing from run aggregates or baseline"));
                 continue;
             }
 
-            var kind = ParseKind(expected.Kind);
-            var tolerance = baseline.Tolerances.TryGetValue(expected.Tol, out var t) ? t : 0m;
-            var status = WithinBand(observed, expected.Value, tolerance, kind) ? Tier2Status.WithinBand : Tier2Status.Warn;
-            results.Add(new Tier2Result(id, observed, expected.Value, tolerance, kind, status));
+            if (!TryParseKind(metric.Kind, out var kind))
+            {
+                results.Add(Tier2Result.Unresolved(id, $"unknown tolerance kind '{metric.Kind}' in baseline"));
+                continue;
+            }
+
+            // A missing named tolerance is a baseline typo, not a drift — never collapse the band to 0m (that
+            // would manufacture a spurious Warn); record it as Unresolved instead.
+            if (metric.Tol is null || !tolerances.TryGetValue(metric.Tol, out var tolerance))
+            {
+                results.Add(Tier2Result.Unresolved(id, $"tolerance '{metric.Tol}' not defined in baseline"));
+                continue;
+            }
+
+            var status = WithinBand(observed, metric.Value, tolerance, kind) ? Tier2Status.WithinBand : Tier2Status.Warn;
+            results.Add(new Tier2Result(id, observed, metric.Value, tolerance, kind, status));
         }
 
         return new Tier2Report(results, SkipReason: null);
@@ -77,13 +116,17 @@ public static class Tier2Baseline
             _ => throw new InvalidOperationException($"Unhandled Tier-2 tolerance kind '{kind}'."),
         };
 
-    private static Tier2ToleranceKind ParseKind(string kind) =>
-        kind switch
+    // Non-throwing: an unknown or absent kind in the baseline JSON becomes an Unresolved row (advisory
+    // tier never throws), not an exception that would fail the whole soak run before Tier 1/Tier 3 render.
+    private static bool TryParseKind(string? kind, out Tier2ToleranceKind result)
+    {
+        switch (kind)
         {
-            "exact-ish" => Tier2ToleranceKind.ExactIsh,
-            "count" => Tier2ToleranceKind.Count,
-            "count-min" => Tier2ToleranceKind.CountMin,
-            "scalar" => Tier2ToleranceKind.Scalar,
-            _ => throw new InvalidOperationException($"Unknown Tier-2 tolerance kind '{kind}' in baseline JSON."),
-        };
+            case "exact-ish": result = Tier2ToleranceKind.ExactIsh; return true;
+            case "count": result = Tier2ToleranceKind.Count; return true;
+            case "count-min": result = Tier2ToleranceKind.CountMin; return true;
+            case "scalar": result = Tier2ToleranceKind.Scalar; return true;
+            default: result = default; return false;
+        }
+    }
 }

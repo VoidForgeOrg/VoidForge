@@ -1,7 +1,8 @@
 # Verifier Research: Live Soak-Run Verifier
 
-> **Status:** Design + **all three assertion tiers shipped**. This document is the design for the
-> verifier the team is **primarily** implementing; §2–§8 remain the target end-state.
+> **Status:** Design doc — **all three assertion tiers shipped** (Tier 1 #96, Tier 3 #98, Tier 2 #99).
+> §2–§8 are the design of record the shipped code follows; where the code refined a detail, the notes
+> below and the source under `src/Voidforge.SoakTests/` are authoritative.
 >
 > **Shipped (`src/Voidforge.SoakTests/`):** a standalone `dotnet test` project — deliberately
 > **not** in `src/Voidforge.slnx`, so no CI lane or Stop-hook runs it — that boots the real host

@@ -58,7 +58,7 @@ public sealed class TwoUserEconomySoakTests
         // when none is committed or the window does not match). It NEVER asserts — only Tier 1 and Tier 3
         // hard-fail the run.
         var aggregates = SoakAggregates.Compute(snapshot, scoreCalculator);
-        var tier2 = Tier2Baseline.EvaluateOrSkip(aggregates, SoakConfig.WindowSeconds);
+        var tier2 = Tier2Baseline.EvaluateOrSkip(aggregates, ScenarioIntent.ScenarioId, SoakConfig.WindowSeconds);
 
         // Render the full report BEFORE asserting, so the per-tier matrices reach the test output even
         // when an assertion below fails the run.

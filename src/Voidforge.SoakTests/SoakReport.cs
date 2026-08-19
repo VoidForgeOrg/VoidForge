@@ -89,6 +89,14 @@ public static class SoakReport
 
         foreach (var r in report.Results)
         {
+            // An Unresolved row is a baseline/aggregate gap (missing metric, unknown kind, undefined
+            // tolerance) — render the reason, not a bogus observed-vs-expected comparison.
+            if (r.Status == Tier2Status.Unresolved)
+            {
+                Emit(sb, $"  [UNRESOLVED] {r.Id}: {r.Reason}");
+                continue;
+            }
+
             var tag = r.Status == Tier2Status.WithinBand ? "BAND" : "WARN";
             Emit(sb, $"  [{tag}] {r.Id}: observed {r.Observed} vs expected {r.Expected} {FormatBand(r)}");
         }

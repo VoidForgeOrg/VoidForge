@@ -8,7 +8,10 @@ public sealed record Tier2Report(IReadOnlyList<Tier2Result> Results, string? Ski
 {
     public bool Skipped => SkipReason is not null;
 
-    public bool AllWithinBand => Results.All(r => r.Status == Tier2Status.WithinBand);
+    // A skipped report never ran a comparison, so it is NOT "all within band" (an empty Results would
+    // otherwise make Enumerable.All vacuously true). An Unresolved row also fails this — only a real
+    // WithinBand-for-every-metric run is a clean advisory signal.
+    public bool AllWithinBand => !Skipped && Results.All(r => r.Status == Tier2Status.WithinBand);
 
     public string WarnSummary() =>
         string.Join(Environment.NewLine, Results.Where(r => r.Status == Tier2Status.Warn).Select(r => r.Id));
