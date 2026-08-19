@@ -5,6 +5,435 @@
     "version": "1.0"
   },
   "paths": {
+    "/api/planets/{planetId}/buildings": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.BuildingEndpoints"
+        ],
+        "summary": "POST_api_planets_planetId_buildings",
+        "description": "POST_api_planets_planetId_buildings",
+        "operationId": "POST_api_planets_planetId_buildings",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceBuildingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/buildings/{slotIndex}/construction": {
+      "delete": {
+        "tags": [
+          "Voidforge.Api.Endpoints.BuildingEndpoints"
+        ],
+        "summary": "DELETE_api_planets_planetId_buildings_slotIndex_construction",
+        "description": "DELETE_api_planets_planetId_buildings_slotIndex_construction",
+        "operationId": "DELETE_api_planets_planetId_buildings_slotIndex_construction",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "slotIndex",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/buildings/{slotIndex}/demolish": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.BuildingEndpoints"
+        ],
+        "summary": "POST_api_planets_planetId_buildings_slotIndex_demolish",
+        "description": "POST_api_planets_planetId_buildings_slotIndex_demolish",
+        "operationId": "POST_api_planets_planetId_buildings_slotIndex_demolish",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "slotIndex",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/api/fleets/{fleetId}/missions": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "POST_api_fleets_fleetId_missions",
+        "description": "POST_api_fleets_fleetId_missions",
+        "operationId": "POST_api_fleets_fleetId_missions",
+        "parameters": [
+          {
+            "name": "fleetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchMissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/fleets": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "POST_api_planets_planetId_fleets",
+        "description": "POST_api_planets_planetId_fleets",
+        "operationId": "POST_api_planets_planetId_fleets",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssembleFleetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "GET_api_planets_planetId_fleets",
+        "description": "GET_api_planets_planetId_fleets",
+        "operationId": "GET_api_planets_planetId_fleets",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetSummaryResponsePagedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleets/{fleetId}/disband": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "POST_api_fleets_fleetId_disband",
+        "description": "POST_api_fleets_fleetId_disband",
+        "operationId": "POST_api_fleets_fleetId_disband",
+        "parameters": [
+          {
+            "name": "fleetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleets/{fleetId}/cancel": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "POST_api_fleets_fleetId_cancel",
+        "description": "POST_api_fleets_fleetId_cancel",
+        "operationId": "POST_api_fleets_fleetId_cancel",
+        "parameters": [
+          {
+            "name": "fleetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleets/{fleetId}/unload": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "POST_api_fleets_fleetId_unload",
+        "description": "POST_api_fleets_fleetId_unload",
+        "operationId": "POST_api_fleets_fleetId_unload",
+        "parameters": [
+          {
+            "name": "fleetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleets": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "GET_api_fleets",
+        "description": "GET_api_fleets",
+        "operationId": "GET_api_fleets",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetSummaryResponsePagedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleets/{fleetId}": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.FleetEndpoints"
+        ],
+        "summary": "GET_api_fleets_fleetId",
+        "description": "GET_api_fleets_fleetId",
+        "operationId": "GET_api_fleets_fleetId",
+        "parameters": [
+          {
+            "name": "fleetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ping": {
       "get": {
         "tags": [
@@ -56,9 +485,6 @@
                 }
               }
             }
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -91,16 +517,6 @@
                 }
               }
             }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
           }
         }
       }
@@ -123,9 +539,198 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/ship-queue": {
+      "post": {
+        "tags": [
+          "Voidforge.Api.Endpoints.ShipEndpoints"
+        ],
+        "summary": "POST_api_planets_planetId_ship_queue",
+        "description": "POST_api_planets_planetId_ship_queue",
+        "operationId": "POST_api_planets_planetId_ship_queue",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueueShipRequest"
+              }
+            }
           },
-          "404": {
-            "description": "Not Found"
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipBuildResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.ShipEndpoints"
+        ],
+        "summary": "GET_api_planets_planetId_ship_queue",
+        "description": "GET_api_planets_planetId_ship_queue",
+        "operationId": "GET_api_planets_planetId_ship_queue",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipBuildResponsePagedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/ship-queue/{buildId}": {
+      "delete": {
+        "tags": [
+          "Voidforge.Api.Endpoints.ShipEndpoints"
+        ],
+        "summary": "DELETE_api_planets_planetId_ship_queue_buildId",
+        "description": "DELETE_api_planets_planetId_ship_queue_buildId",
+        "operationId": "DELETE_api_planets_planetId_ship_queue_buildId",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "buildId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanetResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/planets/{planetId}/ships": {
+      "get": {
+        "tags": [
+          "Voidforge.Api.Endpoints.ShipEndpoints"
+        ],
+        "summary": "GET_api_planets_planetId_ships",
+        "description": "GET_api_planets_planetId_ships",
+        "operationId": "GET_api_planets_planetId_ships",
+        "parameters": [
+          {
+            "name": "planetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ShipType"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterShipResponsePagedResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -138,22 +743,36 @@
         "summary": "GET_api_solar_systems",
         "description": "GET_api_solar_systems",
         "operationId": "GET_api_solar_systems",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SolarSystemResponse"
-                  }
+                  "$ref": "#/components/schemas/SolarSystemResponsePagedResponse"
                 }
               }
             }
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -161,15 +780,376 @@
   },
   "components": {
     "schemas": {
+      "AssembleFleetRequest": {
+        "required": [
+          "cargo",
+          "shipIds"
+        ],
+        "type": "object",
+        "properties": {
+          "shipIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "cargo": {
+            "$ref": "#/components/schemas/CargoRequest"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BuildingSlotResponse": {
+        "required": [
+          "haltReason",
+          "status",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/BuildingType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BuildingStatus"
+          },
+          "etaCompletionUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "haltReason": {
+            "$ref": "#/components/schemas/HaltReason"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BuildingStatus": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "BuildingType": {
+        "enum": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "CargoRequest": {
+        "required": [
+          "ironIngot",
+          "ironOre"
+        ],
+        "type": "object",
+        "properties": {
+          "ironOre": {
+            "type": "number",
+            "format": "double"
+          },
+          "ironIngot": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EnergyResponse": {
+        "required": [
+          "consumptionMw",
+          "generationMw",
+          "productivityMultiplier"
+        ],
+        "type": "object",
+        "properties": {
+          "generationMw": {
+            "type": "number",
+            "format": "double"
+          },
+          "consumptionMw": {
+            "type": "number",
+            "format": "double"
+          },
+          "productivityMultiplier": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FleetResponse": {
+        "required": [
+          "assembledAt",
+          "cargoCapacity",
+          "cargoIronIngot",
+          "cargoIronOre",
+          "id",
+          "mission",
+          "ownerId",
+          "ships",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FleetStatus"
+          },
+          "locationPlanetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assembledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetShipResponse"
+            }
+          },
+          "originPlanetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "destinationPlanetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "mission": {
+            "$ref": "#/components/schemas/MissionType"
+          },
+          "departedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "arrivesAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "recalledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cargoIronOre": {
+            "type": "number",
+            "format": "double"
+          },
+          "cargoIronIngot": {
+            "type": "number",
+            "format": "double"
+          },
+          "cargoCapacity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FleetShipResponse": {
+        "required": [
+          "completedAt",
+          "id",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ShipType"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FleetStatus": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "FleetSummaryResponse": {
+        "required": [
+          "assembledAt",
+          "id",
+          "ownerId",
+          "shipCount",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FleetStatus"
+          },
+          "locationPlanetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assembledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shipCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FleetSummaryResponsePagedResponse": {
+        "required": [
+          "hasNext",
+          "hasPrevious",
+          "items",
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetSummaryResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalItems": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "hasPrevious": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "hasNext": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HaltReason": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "LaunchMissionRequest": {
+        "required": [
+          "destinationPlanetId",
+          "mission"
+        ],
+        "type": "object",
+        "properties": {
+          "mission": {
+            "$ref": "#/components/schemas/MissionType"
+          },
+          "destinationPlanetId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MissionType": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "PlaceBuildingRequest": {
+        "required": [
+          "buildingType"
+        ],
+        "type": "object",
+        "properties": {
+          "buildingType": {
+            "$ref": "#/components/schemas/BuildingType"
+          }
+        },
+        "additionalProperties": false
+      },
       "PlanetResponse": {
         "required": [
+          "activeBuilds",
+          "buildings",
           "buildingSlotCount",
+          "energy",
           "id",
           "ironIngot",
           "ironOre",
           "ironOrePool",
           "name",
-          "solarSystemId"
+          "queueLength",
+          "shipCount",
+          "solarSystemId",
+          "x",
+          "y",
+          "z"
         ],
         "type": "object",
         "properties": {
@@ -190,18 +1170,51 @@
             "nullable": true
           },
           "ironOrePool": {
-            "type": "integer",
-            "format": "int64"
+            "type": "number",
+            "format": "double"
           },
           "buildingSlotCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          },
+          "z": {
+            "type": "number",
+            "format": "double"
           },
           "ironOre": {
             "$ref": "#/components/schemas/ResourcePoolResponse"
           },
           "ironIngot": {
             "$ref": "#/components/schemas/ResourcePoolResponse"
+          },
+          "energy": {
+            "$ref": "#/components/schemas/EnergyResponse"
+          },
+          "shipCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "activeBuilds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "queueLength": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "buildings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BuildingSlotResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -210,7 +1223,8 @@
         "required": [
           "id",
           "name",
-          "registeredAt"
+          "registeredAt",
+          "score"
         ],
         "type": "object",
         "properties": {
@@ -224,6 +1238,22 @@
           "registeredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "score": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "QueueShipRequest": {
+        "required": [
+          "shipType"
+        ],
+        "type": "object",
+        "properties": {
+          "shipType": {
+            "$ref": "#/components/schemas/ShipType"
           }
         },
         "additionalProperties": false
@@ -285,6 +1315,168 @@
         },
         "additionalProperties": false
       },
+      "RosterShipResponse": {
+        "required": [
+          "completedAt",
+          "id",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ShipType"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RosterShipResponsePagedResponse": {
+        "required": [
+          "hasNext",
+          "hasPrevious",
+          "items",
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RosterShipResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalItems": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "hasPrevious": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "hasNext": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ShipBuildResponse": {
+        "required": [
+          "id",
+          "status",
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ShipType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ShipBuildStatus"
+          },
+          "etaCompletionUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ShipBuildResponsePagedResponse": {
+        "required": [
+          "hasNext",
+          "hasPrevious",
+          "items",
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShipBuildResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalItems": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "hasPrevious": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "hasNext": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ShipBuildStatus": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ShipType": {
+        "enum": [
+          0,
+          1
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
       "SolarSystemResponse": {
         "required": [
           "id",
@@ -324,6 +1516,52 @@
           }
         },
         "additionalProperties": false
+      },
+      "SolarSystemResponsePagedResponse": {
+        "required": [
+          "hasNext",
+          "hasPrevious",
+          "items",
+          "page",
+          "pageSize",
+          "totalItems",
+          "totalPages"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SolarSystemResponse"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalItems": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "hasPrevious": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "hasNext": {
+            "type": "boolean",
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -341,6 +1579,12 @@
   ],
   "tags": [
     {
+      "name": "Voidforge.Api.Endpoints.BuildingEndpoints"
+    },
+    {
+      "name": "Voidforge.Api.Endpoints.FleetEndpoints"
+    },
+    {
       "name": "Voidforge.Api.Endpoints.PingEndpoint"
     },
     {
@@ -348,6 +1592,9 @@
     },
     {
       "name": "Voidforge.Api.Endpoints.PlayerEndpoints"
+    },
+    {
+      "name": "Voidforge.Api.Endpoints.ShipEndpoints"
     },
     {
       "name": "Voidforge.Api.Endpoints.SolarSystemEndpoints"
