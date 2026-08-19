@@ -66,16 +66,42 @@ The out-of-solution `Voidforge.SoakTests` project is the sole exception to the U
 
 The live soak-run verifier (design: `technical-design/research/verifier-live-soak-run.md`) lives in a
 **separate `Voidforge.SoakTests` project that is deliberately NOT in `src/Voidforge.slnx`**, so it is
-invisible to `dotnet test src/Voidforge.slnx`, the CI `test`/`unit` jobs, and the Stop-hook. It boots
-the real host against an **isolated, auto-created `voidforge_soak_test` DB** (separate from the shared
-`voidforge_test`, so it never collides with a hook- or CI-triggered run), drives two contending users
-over real HTTP for a bounded window while the real Wolverine scheduler fires completions, then asserts
-Tier-1 invariants. Run it explicitly:
+invisible to `dotnet test src/Voidforge.slnx`, the CI `test`/`unit` jobs, and the Stop-hook. Each
+scenario boots the real host against **its own isolated, auto-created DB** (separate from the shared
+`voidforge_test`, so it never collides with a hook- or CI-triggered run), drives players over real HTTP
+for a bounded window while the real Wolverine scheduler fires completions, drains the scheduler, takes one
+authoritative snapshot, then asserts the three tiers (Tier 1 invariants + Tier 3 outcomes hard-gate; Tier
+2 baselines are advisory). Run it explicitly:
 
 ```bash
-SOAK_WINDOW_SECONDS=120 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj   # skeleton smoke
-SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj   # reaches the depletion cascade
+dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj                                  # all scenarios, serial, 120s
+SOAK_WINDOW_SECONDS=300 dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj          # reaches the 300s cascades
+dotnet test src/Voidforge.SoakTests/Voidforge.SoakTests.csproj --filter "FullyQualifiedName~InputStarvation"  # one scenario
+bash scripts/soak-matrix.sh                                                                     # all scenarios IN PARALLEL
 ```
+
+**The scenario seam.** A scenario is one self-contained `SoakScenario` (`SoakScenario.cs`): `Id`, its own
+`DbName`, an `ApplyConfig` theme (env-var overrides before boot — never the connection string, the fixture
+owns that), a `SoakScenarioBody` (registration + scripting), a `ScenarioIntent`, and an optional Tier-2
+`BaselineFile`. The evaluation half — all three tiers, the drain (`SchedulerQuiescence`), the snapshot
+reader, and the `IntegrationApiExtensions` HTTP vocabulary — is scenario-agnostic and reused as-is
+(`SoakRunner` runs the whole boot→drive→drain→snapshot→assert pipeline for any scenario). Tier 3's outcome
+*set* is intent-driven: `ExpectsTransport`/`ExpectsDepletion` gate O4/O5 and `ExpectedHalts` drives O6, so
+a differently-shaped scenario asserts only its own story.
+
+**Adding a scenario** = (1) a `SoakScenario` instance in `SoakScenarios.cs` (theme + body + intent, a
+`DbName` containing `test`, baseline or `null`); (2) a one-line `SoakHostFixture` subclass; (3) a
+`[CollectionDefinition]`; (4) a 3-line test class that calls `SoakRunner.RunAsync`; (5) a line in
+`scripts/soak-matrix.sh`. `SoakScenarios.InputStarvation` is the worked example — a single-player scenario
+that isolates the `InputStarved` halt, with no Tier-2 baseline (Tier 1 + Tier 3 gate it).
+
+**Parallelism is one process per scenario, not xUnit collections.** In-process the soak assembly runs
+**serially** (`[assembly: CollectionBehavior(DisableTestParallelization = true)]`) because the host installs
+a process-global economy rate table (`BuildingSpecs.Current`, "fixed for the process lifetime; differing
+rates require a separate process") and binds config via process-global env vars set just before boot — two
+scenario hosts in one process would share both. `scripts/soak-matrix.sh` launches one `dotnet test --filter`
+process per scenario instead, each on its own DB; a nightly CI matrix would do the same with one runner per
+cell.
 
 ## Log Level Under Test
 

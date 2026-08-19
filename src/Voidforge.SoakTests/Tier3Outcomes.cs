@@ -23,9 +23,9 @@ public static class Tier3Outcomes
             CheckColonization(s, intent),
             CheckShipsProduced(s, intent),
             CheckOreMined(s, intent),
-            CheckTransportDelivered(s, cascadesExpected),
-            CheckDepletionFired(s, cascadesExpected),
-            CheckHaltCascade(s, cascadesExpected),
+            CheckTransportDelivered(s, cascadesExpected && intent.ExpectsTransport),
+            CheckDepletionFired(s, cascadesExpected && intent.ExpectsDepletion),
+            CheckHaltCascade(s, cascadesExpected, intent.ExpectedHalts),
         };
         return new Tier3Report(results);
     }
@@ -135,24 +135,24 @@ public static class Tier3Outcomes
         return null;
     }
 
-    // O6 (window-gated): both halt cascades were observed — a ResourceDepleted halt (A's drills on the
-    // emptied deposit) AND an OutputStorageFull halt (B's refinery on the filled ingot store). Checked
-    // across the union of the captured halt series (catches transient halts) and the final snapshot
-    // (catches terminal ones the poll cadence may have straddled).
-    private static OutcomeResult CheckHaltCascade(WorldSnapshot s, bool expected)
+    // O6 (window-gated): every halt reason the scenario DECLARED (intent.ExpectedHalts) was observed —
+    // e.g. two-user requires ResourceDepleted AND OutputStorageFull; input-starvation requires
+    // InputStarved. Checked across the union of the captured halt series (catches transient halts) and the
+    // final snapshot (catches terminal ones the poll cadence may have straddled). Extra observed reasons
+    // are fine — O6 asserts the declared set is a subset of what happened. Empty declaration => Skipped.
+    private static OutcomeResult CheckHaltCascade(WorldSnapshot s, bool expected, IReadOnlyList<HaltReason> expectedHalts)
     {
-        if (!expected)
+        if (!expected || expectedHalts.Count == 0)
         {
             return Skipped("O6", "halt cascade observed");
         }
 
         var reasons = ObservedHaltReasons(s);
-        var depleted = reasons.Contains(HaltReason.ResourceDepleted);
-        var storageFull = reasons.Contains(HaltReason.OutputStorageFull);
-        var observed = depleted && storageFull;
+        var missing = expectedHalts.Where(r => !reasons.Contains(r)).ToList();
+        var observed = missing.Count == 0;
         return Threshold(
             "O6", "halt cascade observed", observed,
-            $"ResourceDepleted={depleted}, OutputStorageFull={storageFull} (need both); all observed reasons: {FormatReasons(reasons)}");
+            $"expected [{string.Join(", ", expectedHalts.OrderBy(r => r))}]; missing [{FormatReasons([.. missing])}]; all observed reasons: {FormatReasons(reasons)}");
     }
 
     // Colonies = owned planets beyond the registered homeworlds. Registration claims exactly one
@@ -198,6 +198,8 @@ public static class Tier3Outcomes
     private static OutcomeResult Threshold(string id, string title, bool passed, string detail) =>
         new(id, title, passed ? OutcomeStatus.Passed : OutcomeStatus.Failed, detail);
 
+    // Skipped covers both causes: the run window is below the scenario's cascade window, OR the scenario
+    // does not declare this outcome (no transport / no depletion / no expected halts).
     private static OutcomeResult Skipped(string id, string title) =>
-        new(id, title, OutcomeStatus.Skipped, "skipped: needs SOAK_WINDOW_SECONDS >= cascade window");
+        new(id, title, OutcomeStatus.Skipped, "skipped: not required for this scenario at this window");
 }

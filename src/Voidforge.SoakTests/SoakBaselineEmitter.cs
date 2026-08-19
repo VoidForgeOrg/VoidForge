@@ -12,11 +12,11 @@ public static class SoakBaselineEmitter
 {
     public const string Marker = "SOAK_BASELINE_EMIT";
 
-    public static void Emit(SoakAggregates aggregates, int windowSeconds, Action<string> log)
+    public static void Emit(SoakAggregates aggregates, string scenarioId, int windowSeconds, Action<string> log)
     {
         var payload = new
         {
-            scenarioId = ScenarioIntent.ScenarioId,
+            scenarioId,
             windowSeconds,
             metrics = aggregates.ToMetrics(),
         };

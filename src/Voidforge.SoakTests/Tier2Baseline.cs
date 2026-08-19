@@ -31,12 +31,17 @@ public static class Tier2Baseline
     // SKIP, never a throw: Tier 2 is advisory (§2/§7.3), so a bad baseline must not fail the xUnit run
     // before Tier 1/Tier 3 render. Compatibility is gated on ScenarioId + WindowSeconds (the Config block is
     // provenance only — see SoakBaseline); a mismatch on either SKIPs, mirroring Tier 3's window-gated SKIP.
-    public static Tier2Report EvaluateOrSkip(SoakAggregates actual, string scenarioId, int windowSeconds)
+    public static Tier2Report EvaluateOrSkip(SoakAggregates actual, string scenarioId, int windowSeconds, string? baselineFile)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "baselines", "soak-baseline.json");
+        if (baselineFile is null)
+        {
+            return Tier2Report.SkippedReport("scenario declares no Tier-2 baseline (Tier 1 + Tier 3 gate this run)");
+        }
+
+        var path = Path.Combine(AppContext.BaseDirectory, "baselines", baselineFile);
         if (!File.Exists(path))
         {
-            return Tier2Report.SkippedReport("no baseline committed — run SOAK_EMIT_BASELINE=1 at 300s to bless");
+            return Tier2Report.SkippedReport($"no baseline committed at {path} — run SOAK_EMIT_BASELINE=1 at 300s to bless");
         }
 
         SoakBaseline? baseline;

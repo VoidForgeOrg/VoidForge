@@ -20,8 +20,19 @@
 > Validated: 90 s / 300 s runs pass all 11 invariants; the run genuinely exercised parallel
 > Planet-stream appends (observed `23505` optimistic-concurrency collisions absorbed by the retry
 > ladder — I3 dead-letters empty, I5 clean). **Deferred to follow-ups:** nightly CI/soak lane +
-> dedicated DB, envelope-based drain, multi-theme matrix, the golden-diff sibling, and converging
+> dedicated DB, envelope-based drain, the remaining cascade themes (ore-full / ingot-full-isolated /
+> depletion-isolated), a long (~60 min) endurance scenario, the golden-diff sibling, and converging
 > Tier 3 onto the shared `SoakAggregates` (once a CI net exists).
+>
+> **Scenario seam (shipped).** Scenarios are now pluggable: a `SoakScenario` bundles `{ Id, DbName,
+> ApplyConfig theme, Body, Intent, BaselineFile }`, `SoakRunner` runs the tier pipeline for any of them,
+> and Tier 3's outcome *set* is intent-driven (`ExpectsTransport`/`ExpectsDepletion` gate O4/O5,
+> `ExpectedHalts` drives O6) so a differently-shaped scenario asserts only its own story. First extra
+> scenario landed: **`input-starvation-v1`** — a single-player isolate of the `InputStarved` halt (no
+> Tier-2 baseline; Tier 1 + Tier 3 gate it). Each scenario runs on its own DB; parallelism is **one
+> process per scenario** (`scripts/soak-matrix.sh`), because `BuildingSpecs.Current` is process-global
+> ("differing rates require a separate process") and config binds via process-global env vars — so
+> in-process the soak assembly stays serial.
 >
 > **Two findings from v1 (acted on):**
 > 1. **Transport is own-planets-only, so §8.2's A→B lifeline was infeasible — the scenario was
@@ -611,7 +622,11 @@ overload, `testing.md:20`).
    Envelope introspection stays open only as an optional precision hardening.
 2. **How many scenario themes?** One themed run can't maximize depletion *and* both storage-full
    variants (§4.2). Do we run one broad scenario nightly, or a small matrix of themed scenarios
-   (depletion / ore-full / ingot-full / starvation), each with its own baseline?
+   (depletion / ore-full / ingot-full / starvation), each with its own baseline? **Partially resolved:**
+   the scenario seam shipped and `input-starvation-v1` is the first isolate (see the intro banner). The
+   matrix is now cheap to extend — each new theme is one `SoakScenario` + fixture + 3-line test class,
+   run as its own process (`scripts/soak-matrix.sh`). Remaining themes (ore-full / ingot-full-isolated /
+   depletion-isolated) and a long endurance run are still open.
 3. **Tier-2 hardness.** Should a persistent Tier-2 drift (e.g. 3 consecutive nightlies outside
    band) auto-escalate to a hard failure, or always stay human-reviewed?
 4. **Baseline storage & N.** How many blessing runs (§3.2) constitute a trustworthy envelope,

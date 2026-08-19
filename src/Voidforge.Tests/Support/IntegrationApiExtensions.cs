@@ -502,6 +502,22 @@ public static class IntegrationApiExtensions
     }
 
     /// <summary>
+    /// Demolishes a completed building via <c>POST /api/planets/{id}/buildings/{slot}/demolish</c> and
+    /// asserts the 202 Accepted the endpoint returns (#72); the slot flips to Demolishing immediately
+    /// (leaving the Operational set) and a durable completion tombstones it.
+    /// </summary>
+    public static async Task DemolishBuilding(
+        this IAlbaHost host, RegisterPlayerResponse registration, int slotIndex, Guid? planetId = null)
+    {
+        var result = await host.Send(s =>
+        {
+            s.Post.Url($"/api/planets/{planetId ?? registration.HomeworldId}/buildings/{slotIndex}/demolish");
+            s.WithRequestHeader(ApiKeyAuthenticationDefaults.HeaderName, registration.ApiKey);
+        });
+        result.EnsureExpected(202);
+    }
+
+    /// <summary>
     /// Cancels an in-progress construction via <c>DELETE /api/planets/{id}/buildings/{slot}/construction</c>
     /// and asserts the 204 No Content the endpoint returns (#72); the slot becomes a Cancelled tombstone.
     /// </summary>

@@ -2,7 +2,6 @@ using System.Diagnostics;
 using Alba;
 using Marten;
 using Voidforge.Api.Domain;
-using Voidforge.Tests.Support;
 
 namespace Voidforge.SoakTests;
 
@@ -20,27 +19,21 @@ public sealed class SoakDriver
         _store = store;
     }
 
-    public async Task<SoakDriverResult> RunAsync(TimeSpan window, Action<string>? log = null)
+    public async Task<SoakDriverResult> RunAsync(SoakScenarioBody body, TimeSpan window, Action<string>? log = null)
     {
         var recorder = new SoakRecorder();
         var stopwatch = Stopwatch.StartNew();
         var deadline = new Deadline(stopwatch, window);
-
-        var regA = await _host.RegisterPlayer("SoakA_");
-        var regB = await _host.RegisterPlayer("SoakB_");
-        var homeA = await _host.GetPlanetById(regA, regA.HomeworldId);
-        var homeB = await _host.GetPlanetById(regB, regB.HomeworldId);
 
         using var snapshotCts = new CancellationTokenSource();
         var snapshotLoop = CaptureSnapshotsAsync(recorder, snapshotCts.Token);
 
         try
         {
-            // A colonizes a second system and supplies it; B colonizes and recalls mid-transit. Each
-            // excludes its own home system so the colonize legs reach out to another system.
-            var scriptA = ScenarioScript.RunIndustrialistAsync(_host, recorder, regA, homeA.SolarSystemId, deadline);
-            var scriptB = ScenarioScript.RunColonizerAsync(_host, recorder, regB, homeB.SolarSystemId, deadline);
-            await Task.WhenAll(scriptA, scriptB);
+            // The scenario body owns player registration + scripting (scenarios differ in player count);
+            // the driver owns the reusable orchestration around it. The snapshot loop is already running,
+            // so it tolerates the pre-registration world (only the seeded uncolonized planets exist yet).
+            await body(_host, recorder, deadline);
 
             // Keep the window open so the real scheduler can fire the arrivals / ship completions the
             // scripts triggered, with the snapshot loop still running.
