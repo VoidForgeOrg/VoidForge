@@ -1,77 +1,73 @@
 using System.Globalization;
+using Npgsql;
 
 namespace Voidforge.SoakTests;
 
-// The §8.2 "depletion + ingot-storage-full" soak theme, expressed as env-var overrides applied before
-// the real host boots (ASP.NET Core maps `__` to the `:` config hierarchy). Mirrors AppFixture's
-// env-var-before-boot approach so it uses the WithWebHostBuilder-avoiding path.
+// Shared soak plumbing: the run window, the emit-mode flag, per-scenario connection-string composition,
+// and the env-var helpers scenarios use to express their theme. The world/balance THEME itself lives on
+// each scenario (SoakScenario.ApplyConfig) — this class only carries what is common to every scenario.
+// Env vars are set before AlbaHost.For<Program>() so the host binds them via `__` -> `:` (the
+// WithWebHostBuilder-avoiding path AppFixture documents to dodge a .NET 9 disposal race).
 public static class SoakConfig
 {
-    // The DB name contains "test" so SoakHostFixture's drop-schema safety guard passes unmodified.
+    // Base template: host/port/credentials come from VOIDFORGE_SOAK_CONNECTION_STRING when set (CI passes
+    // it), otherwise this local default. The DATABASE is always overridden per scenario (ConnectionStringFor),
+    // so a scenario can never accidentally inherit another scenario's — or the shared voidforge_test — DB.
+    // The default DB name contains "test" so the drop-schema safety guard passes unmodified.
     public const string DefaultConnectionString =
         "Host=localhost;Port=5432;Database=voidforge_soak_test;Username=postgres;Password=voidforge_dev";
 
     private const int _defaultWindowSeconds = 120;
 
-    // Overridable via the dedicated VOIDFORGE_SOAK_CONNECTION_STRING env var (read first, soak default
-    // second). Deliberately NOT the shared ConnectionStrings__Marten host key, so a stray host-level
-    // Marten connection string can never be picked up here and have its schema dropped.
-    public static string ConnectionString =>
-        Environment.GetEnvironmentVariable("VOIDFORGE_SOAK_CONNECTION_STRING") ?? DefaultConnectionString;
-
-    // Bounded soak window. 120s exercises the whole loop; the §8.2 depletion + ingot-storage-full
-    // cascades fire at ~170-200s, so OBSERVING them (a Tier-3 follow-up) needs SOAK_WINDOW_SECONDS=300.
-    // The Tier-1 invariants hold at every instant regardless of window, so 120s is fine for the skeleton.
+    // Bounded soak window. 120s exercises the whole loop; the two-user depletion + ingot-storage-full
+    // cascades fire at ~170-200s, so observing THEM needs SOAK_WINDOW_SECONDS=300. Tier-1 invariants hold
+    // at every instant regardless of window.
     public static int WindowSeconds => ReadWindowSeconds();
 
-    // Emit mode: when set, the test logs its computed SoakAggregates as one grep-able marker line
+    // Emit mode: when set, the run logs its computed SoakAggregates as one grep-able marker line
     // (SoakBaselineEmitter) so the N-run blessing envelope can be built from machine-readable output.
     public static bool EmitBaseline => ReadFlag("SOAK_EMIT_BASELINE");
 
-    public static void ApplyEnvironmentOverrides()
+    // The connection string for one scenario's DB: take the base template's host/port/credentials and
+    // override only the database name. Keeps every scenario on one Postgres server, isolated by DB.
+    public static string ConnectionStringFor(string dbName)
     {
-        // Set the connection string before AlbaHost.For<Program>() so the host binds it via `__` -> `:`
-        // (the WithWebHostBuilder-avoiding path AppFixture documents to dodge a .NET 9 disposal race).
-        SetEnv("ConnectionStrings__Marten", ConnectionString);
-
-        // Rich-economy world: a finite ore deposit and an ingot store both sized so depletion and
-        // ingot-storage-full can be reached within a few-minute window.
-        SetEnv("WorldGeneration__IronOrePool", "4000");
-        SetEnv("WorldGeneration__IronIngotStorageCapacity", "2500");
-        SetEnv("WorldGeneration__StartingIronOre", "2000");
-        SetEnv("WorldGeneration__StartingIronIngots", "800");
-        SetEnv("WorldGeneration__SolarSystemCount", "40");
-
-        // Soak-scale construction durations and ship costs/speeds: fast enough to complete within the
-        // window, slow enough that the real scheduler genuinely spreads completions across wall-clock.
-        SetEnv("Balance__Drill__BuildDurationSeconds", "20");
-        SetEnv("Balance__Refinery__BuildDurationSeconds", "20");
-        SetEnv("Balance__Generator__BuildDurationSeconds", "20");
-        SetEnv("Balance__Shipyard__BuildDurationSeconds", "20");
-        SetEnv("Balance__ColonyShip__BuildDurationSeconds", "15");
-        SetEnv("Balance__CargoVessel__BuildDurationSeconds", "15");
-        SetEnv("Balance__ColonyShip__IngotCost", "60");
-        SetEnv("Balance__CargoVessel__IngotCost", "60");
-        SetEnv("Balance__Ships__ColonyShip__SpeedPerSecond", "100");
-        SetEnv("Balance__Ships__CargoVessel__SpeedPerSecond", "100");
-
-        // Economy is deliberately left unset: it binds from appsettings.json (10/s drill, 5/s refinery,
-        // 1:2 ratio), which is exactly what the §4.2 depletion math assumes.
-
-        PinLogLevels();
+        var baseConn = Environment.GetEnvironmentVariable("VOIDFORGE_SOAK_CONNECTION_STRING") ?? DefaultConnectionString;
+        var builder = new NpgsqlConnectionStringBuilder(baseConn) { Database = dbName };
+        return builder.ConnectionString;
     }
 
-    // Copied from AppFixture.PinTestLogLevels: silence the per-SQL Debug/Info logging the Development
-    // environment defaults switch on, so a long soak run does not bury real failures in log noise.
-    private static void PinLogLevels()
+    public static void SetEnv(string key, string value) => Environment.SetEnvironmentVariable(key, value);
+
+    // Scenario themes set keys under these config prefixes (each scenario's ApplyConfig). Env vars are
+    // process-global, so a direct `dotnet test` running multiple soak collections serially in ONE process
+    // would otherwise let a scenario inherit the PRIOR scenario's theme keys (e.g. two-user's IronOrePool
+    // leaking into input-starvation), making results depend on scenario order. Clearing these prefixes
+    // before each in-process boot gives every scenario a clean slate. (The matrix runner already isolates
+    // via separate processes; this makes the single-process path order-independent too.) The connection
+    // string and log levels are re-set on every boot, so they never bleed and are not cleared here.
+    private static readonly string[] _themePrefixes = ["WorldGeneration__", "Balance__"];
+
+    public static void ResetThemeEnv()
+    {
+        foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<string>().ToList())
+        {
+            if (_themePrefixes.Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal)))
+            {
+                Environment.SetEnvironmentVariable(key, null);
+            }
+        }
+    }
+
+    // Silence the per-SQL Debug/Info logging the Development environment defaults switch on, so a long soak
+    // run does not bury real failures in log noise. Every scenario's ApplyConfig calls this.
+    public static void PinLogLevels()
     {
         SetEnv("Logging__LogLevel__Default", "Information");
         SetEnv("Logging__LogLevel__Marten", "Warning");
         SetEnv("Logging__LogLevel__Wolverine", "Warning");
         SetEnv("Logging__LogLevel__Npgsql", "Warning");
     }
-
-    private static void SetEnv(string key, string value) => Environment.SetEnvironmentVariable(key, value);
 
     private static int ReadWindowSeconds()
     {

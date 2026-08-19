@@ -6,10 +6,18 @@ using Xunit;
 
 namespace Voidforge.SoakTests;
 
-// Clone of AppFixture for the soak run: applies the SoakConfig env overrides, auto-creates the
-// isolated soak DB, drops the schema so WorldSeeder reseeds fresh, then boots the real host.
-public sealed class SoakHostFixture : IAsyncLifetime
+// Boots the real host for ONE scenario: composes the scenario's connection string from its DbName,
+// auto-creates + reseeds that isolated DB, applies the scenario theme, then boots. A subclass names the
+// scenario; everything else is shared. Mirrors AppFixture's env-var-before-boot approach (the
+// WithWebHostBuilder-avoiding path) so it dodges the .NET 9 disposal race.
+public abstract class SoakHostFixture : IAsyncLifetime
 {
+    // The scenario this fixture hosts. Each concrete subclass names exactly one.
+    protected abstract SoakScenario Scenario { get; }
+
+    // Exposed so SoakRunner can read the scenario's Id / Intent / BaselineFile without re-selecting it.
+    public SoakScenario ActiveScenario => Scenario;
+
     public IAlbaHost Host { get; private set; } = null!;
 
     // The DI-owned document store. NEVER `await using` this — that disposes the singleton the host
@@ -18,9 +26,7 @@ public sealed class SoakHostFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        SoakConfig.ApplyEnvironmentOverrides();
-
-        var connStr = SoakConfig.ConnectionString;
+        var connStr = SoakConfig.ConnectionStringFor(Scenario.DbName);
 
         // Safety check FIRST: refuse to touch (or create) a database whose name does not contain "test".
         var builder = new NpgsqlConnectionStringBuilder(connStr);
@@ -41,12 +47,21 @@ public sealed class SoakHostFixture : IAsyncLifetime
             await cmd.ExecuteNonQueryAsync();
         }
 
+        // Wire the connection (this scenario's DB) and the scenario theme via env vars BEFORE the host
+        // boots — the WithWebHostBuilder-avoiding path. ApplyConfig sets ONLY the theme, never the
+        // connection string, so this ordering is the single place the DB is bound. ResetThemeEnv first
+        // clears any prior scenario's theme keys, so a direct `dotnet test` running both soak collections
+        // serially in one process is order-independent (see SoakConfig.ResetThemeEnv).
+        SoakConfig.ResetThemeEnv();
+        SoakConfig.SetEnv("ConnectionStrings__Marten", connStr);
+        Scenario.ApplyConfig();
+
         Host = await AlbaHost.For<Program>();
     }
 
     public Task DisposeAsync() => Host?.DisposeAsync().AsTask() ?? Task.CompletedTask;
 
-    // start-infra only provisions voidforge_test; the soak DB is separate, so create it if missing to
+    // start-infra only provisions voidforge_test; each soak DB is separate, so create it if missing to
     // keep the run self-contained. Connect to the standard `postgres` maintenance database on the same
     // server (it always exists) and, because CREATE DATABASE cannot run inside a transaction, issue it
     // as a plain command.
