@@ -66,6 +66,7 @@ frontend/
 - `TreatWarningsAsErrors`: true
 - `AnalysisLevel`: latest-Recommended
 - `EnforceCodeStyleInBuild`: true
+- `RollForward`: LatestMajor (run the net9.0 build on a newer installed runtime; no-op where .NET 9 is present)
 - Analyzers: Roslynator.Analyzers, Meziantou.Analyzer
 
 ## Test Conventions

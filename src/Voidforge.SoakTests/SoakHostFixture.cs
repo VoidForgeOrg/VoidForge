@@ -1,4 +1,5 @@
 using Alba;
+using JasperFx.CommandLine;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -55,6 +56,9 @@ public abstract class SoakHostFixture : IAsyncLifetime
         SoakConfig.ResetThemeEnv();
         SoakConfig.SetEnv("ConnectionStrings__Marten", connStr);
         Scenario.ApplyConfig();
+
+        // Same as AppFixture: JasperFx 2.x needs this so RunJasperFxCommands starts the IHost under Alba.
+        JasperFxEnvironment.AutoStartHost = true;
 
         Host = await AlbaHost.For<Program>();
     }

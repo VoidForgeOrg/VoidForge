@@ -14,8 +14,11 @@
 
 ```csharp
 Environment.SetEnvironmentVariable("ConnectionStrings__Marten", connStr);
+JasperFxEnvironment.AutoStartHost = true;
 Host = await AlbaHost.For<Program>();
 ```
+
+`JasperFxEnvironment.AutoStartHost = true` is required since JasperFx 2.x (Wolverine 6 / Marten 9): `Program.cs` ends in `RunJasperFxCommands`, and under a `WebApplicationFactory` (Alba) host the command runner no longer starts the `IHost` on its own. Without the flag every test fails at fixture boot with `ObjectDisposedException: IServiceProvider`. Both `AppFixture` and `SoakHostFixture` set it.
 
 **Do NOT** use `AlbaHost.For<Program>(Action<IWebHostBuilder>)` — it triggers an `ObjectDisposedException` in .NET 9 due to a `WithWebHostBuilder` + `RunJasperFxCommands` disposal race.
 

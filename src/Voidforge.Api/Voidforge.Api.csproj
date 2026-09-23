@@ -8,9 +8,10 @@
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
-    <PackageReference Include="Marten" Version="8.37.2" />
-    <PackageReference Include="WolverineFx.Http.Marten" Version="5.16.4" />
-    <PackageReference Include="WolverineFx.Marten" Version="5.16.4" />
+    <PackageReference Include="Marten" Version="9.39.0" />
+    <PackageReference Include="WolverineFx.Http.Marten" Version="6.39.1" />
+    <PackageReference Include="WolverineFx.Marten" Version="6.39.1" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" Version="6.39.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.13" />
   </ItemGroup>
 
