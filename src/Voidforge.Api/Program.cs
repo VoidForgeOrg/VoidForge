@@ -1,5 +1,6 @@
 using JasperFx;
 using JasperFx.Events;
+using JasperFx.Events.Projections;
 using Marten;
 using Marten.Events.Projections;
 using Microsoft.AspNetCore.Authorization;

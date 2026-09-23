@@ -5,10 +5,10 @@
 | Concern | Decision | Package / Tool |
 |---------|----------|----------------|
 | Language & Runtime | C# / .NET 9 | `net9.0` TFM |
-| Application Framework | Critter Stack | Wolverine 5.x + Marten 8.x |
+| Application Framework | Critter Stack | Wolverine 6.x + Marten 9.x |
 | HTTP Endpoints | Wolverine.HTTP | `WolverineFx.Http`, `WolverineFx.Http.Marten` |
 | Event Sourcing & Documents | Marten | `Marten` (PostgreSQL JSONB) |
-| Messaging & Scheduling | Wolverine | `WolverineFx`, `WolverineFx.Marten` |
+| Messaging & Scheduling | Wolverine | `WolverineFx`, `WolverineFx.Marten`, `WolverineFx.RuntimeCompilation` |
 | Database | PostgreSQL 16+ | Single instance for MVP |
 | API Style | REST + OpenAPI | Swashbuckle |
 | Authentication | API keys | Custom middleware (MVP) |
@@ -16,7 +16,7 @@
 | Deployment | Docker Compose | App container + PostgreSQL |
 | CI/CD | GitHub Actions | Build, test, lint |
 
-> **Upgrade path:** Wolverine 6.0 and Marten 9.0 (targeting .NET 10 LTS) are expected Q2–Q3 2026. Plan to upgrade when available — the migration should be straightforward as these releases focus on AOT compliance and cold-start optimization rather than API changes.
+> **Upgraded 2026-09-23** to Wolverine 6.x + Marten 9.x (still on the `net9.0` TFM). The bump was forced by GHSA-rfx3-98h7-v3xp (SQL injection in Marten's LINQ provider, fixed in 9.13.0), which `TreatWarningsAsErrors` turns into a NU1904 restore error. Wolverine 5.x pins Marten 8.x, so both moved together. Notable differences: `IEventStream<T>` and `SnapshotLifecycle` now live in `JasperFx.Events` / `JasperFx.Events.Projections`; core Wolverine no longer ships the Roslyn runtime compiler, so `WolverineFx.RuntimeCompilation` is referenced (auto-registers); and test hosts must set `JasperFxEnvironment.AutoStartHost = true` (see `testing.md`).
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### Decision
 
-**C# on .NET 9** using the **Critter Stack** — Wolverine 5.x (message handling, scheduling, HTTP) and Marten 8.x (event sourcing, document storage on PostgreSQL).
+**C# on .NET 9** using the **Critter Stack**: Wolverine 6.x (message handling, scheduling, HTTP) and Marten 9.x (event sourcing, document storage on PostgreSQL). `Directory.Build.props` sets `RollForward=LatestMajor`, so a machine with only a newer runtime installed (e.g. .NET 10) can still run the `net9.0` build; Docker and CI keep using the 9.0 images/SDK.
 
 ### Rationale
 

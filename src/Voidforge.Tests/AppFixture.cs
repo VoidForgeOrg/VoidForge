@@ -1,4 +1,5 @@
 using Alba;
+using JasperFx.CommandLine;
 using Npgsql;
 using Xunit;
 
@@ -62,6 +63,11 @@ public sealed class AppFixture : IAsyncLifetime
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "DROP SCHEMA IF EXISTS voidforge CASCADE;";
         await cmd.ExecuteNonQueryAsync();
+
+        // Program.cs hands control to RunJasperFxCommands. Under WebApplicationFactory (Alba) the
+        // JasperFx 2.x command runner does not start the IHost by itself, so the factory sees a
+        // disposed service provider. Force the host to start as the docs prescribe for test hosts.
+        JasperFxEnvironment.AutoStartHost = true;
 
         Host = await AlbaHost.For<Program>();
     }
